@@ -13,13 +13,14 @@ from lxml import etree
 
 from bs4 import BeautifulSoup
 from boilerpipe.extract import Extractor
-
+from os import listdir
 # import bunch
 # from bunch import Bunch
 from sklearn.datasets import base as bunch
 import os
 import pickle
 import json
+from sklearn.utils.validation import check_random_state
 
 if "nt" in os.name:
     IMDB_HOME = 'C:/Users/mramire8/Documents/Research/Oracle confidence and Interruption/dataset/aclImdb/raw-data'
@@ -263,6 +264,10 @@ def load_dataset(name, fixk, categories, vct, min_size, raw=False, percent=.5):
         ########## 20 news groups ######
         data = load_blogpan(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
                          fix_k=fixk, raw=raw, percent=percent)  # for testing purposes
+    elif "webkb" in name:
+        # raise Exception("We are not ready for that data yet")
+        data = load_webkb(name, categories=categories, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
+                         fix_k=fixk, raw=raw, percent=percent)
     elif "dummy" in name:
         ########## DUMMY DATA###########
         data = load_dummy("C:/Users/mramire8/Documents/code/python/data/dummy", shuffle=True, rnd=2356,
@@ -557,6 +562,228 @@ def load_blogpan(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer
 
     return data
 
+# from sklearn.datasets import fetch_mldata
+
+def load_biocreative(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False, percent=.5):
+    # target = []
+    # target_names = []
+    # filenames = []
+    #
+    # folders = [f for f in sorted(listdir(container_path))
+    #            if isdir(join(container_path, f))]
+    #
+    # if categories is not None:
+    #     folders = [f for f in folders if f in categories]
+    #
+    # for label, folder in enumerate(folders):
+    #     target_names.append(folder)
+    #     folder_path = join(container_path, folder)
+    #     documents = [join(folder_path, d)
+    #                  for d in sorted(listdir(folder_path))]
+    #     target.extend(len(documents) * [label])
+    #     filenames.extend(documents)
+    #
+    # # convert to array for fancy indexing
+    # filenames = np.array(filenames)
+    # target = np.array(target)
+    #
+    # if shuffle:
+    #     random_state = check_random_state(random_state)
+    #     indices = np.arange(filenames.shape[0])
+    #     random_state.shuffle(indices)
+    #     filenames = filenames[indices]
+    #     target = target[indices]
+    #
+    # if load_content:
+    #     data = [open(filename, 'rb').read() for filename in filenames]
+    #     if encoding is not None:
+    #         data = [d.decode(encoding, decode_error) for d in data]
+    #     return Bunch(data=data,
+    #                  filenames=filenames,
+    #                  target_names=target_names,
+    #                  target=target,
+    #                  DESCR=description)
+    #
+    # return Bunch(filenames=filenames,
+    #              target_names=target_names,
+    #              target=target,
+    #              DESCR=description)
+    pass
+
+
+WEBKB_HOME='C:/Users/mramire8/Documents/Datasets/webkb/webkb'
+
+from bs4 import BeautifulSoup
+
+def clean_html_text(html_text):
+    soup = BeautifulSoup(html_text)
+    return soup.get_text()
+
+
+from os.path import dirname
+from os.path import join
+from os.path import exists
+from os.path import expanduser
+from os.path import isdir
+from os import listdir
+from os import makedirs
+
+
+def get_sub_filenames(input_dir):
+    names = []
+    for path, subdirs, files in os.walk(input_dir):
+        for filename in files:
+            names.append(os.path.join(path, filename))
+    return names
+
+
+
+def load_files_sub(container_path, description=None, categories=None,
+               load_content=True, shuffle=True, encoding=None,
+               charset=None, charset_error=None,
+               decode_error='strict', random_state=0):
+
+    """
+    Adapted from load_file of sklearn, this loads files from directories and subdirectories
+    :param container_path:
+    :param description:
+    :param categories:
+    :param load_content:
+    :param shuffle:
+    :param encoding:
+    :param charset:
+    :param charset_error:
+    :param decode_error:
+    :param random_state:
+    :return:
+    """
+    target = []
+    target_names = []
+    filenames = []
+
+    ## get the folders
+    folders = [f for f in sorted(listdir(container_path))
+               if isdir(join(container_path, f))]
+
+    # get categories
+
+    if categories is not None:
+        folders = [f for f in folders if f in categories]
+
+    for label, folder in enumerate(folders):
+        target_names.append(folder)
+        folder_path = join(container_path, folder)
+        ## get all files from subfolders
+        documents = [join(folder_path, d)
+                     for d in sorted(get_sub_filenames(folder_path))]
+        target.extend(len(documents) * [label])
+        filenames.extend(documents)
+
+    # convert to array for fancy indexing
+    filenames = np.array(filenames)
+    target = np.array(target)
+
+    if shuffle:
+        random_state = check_random_state(random_state)
+        indices = np.arange(filenames.shape[0])
+        random_state.shuffle(indices)
+        filenames = filenames[indices]
+        target = target[indices]
+
+    if load_content:
+        data = [open(filename, 'rb').read() for filename in filenames]
+        if encoding is not None:
+            data = [d.decode(encoding, decode_error) for d in data]
+        return bunch.Bunch(data=data,
+                     filenames=filenames,
+                     target_names=target_names,
+                     target=target,
+                     DESCR=description)
+
+    return bunch.Bunch(filenames=filenames,
+                 target_names=target_names,
+                 target=target,
+                 DESCR=description)
+
+
+def load_webkb(path, categories=None, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False, percent=.5):
+    """
+    Read and process data from  webkb dataset. Documents are files in html format
+    :param path: loacation of the root directory of the data
+    :param categories: categories to load COURSE, DEPARTMENT, FACULTY, OTHER, PROJECT, STAFF, STUDENT
+    :param subset: --unused at the moment --
+    :param shuffle: --unused at the moment --
+    :param rnd: random seed value
+    :param vct: vectorizer for feature vector representation
+    :param fix_k: truncate data a the k-th word, none if including all words
+    :param min_size: minimum size document acceptable to load
+    :param raw: return data without feature vectores
+    :param percent: Percentage to split train-test dataset e.g. .25 will produce a 75% training, 25% test
+    :return: Bunch :
+        .train.data     text of data
+        .train.target   target vector
+        .train.bow      feature vector of full documents
+        .train.bowk     feature of k-words documents
+        .train.kwords   text of k-word documents
+        .test.data      test text data
+        .test.target    test target vector
+        .text.bow       feature vector of test documents
+    :raise ValueError:
+    """
+    data = bunch.Bunch()
+
+    if subset in ('train', 'test'):
+        # data[subset] = load_files("{0}/{1}".format(AVI_HOME, subset), encoding="latin1", load_content=True,
+        #                           random_state=rnd)
+        raise Exception("We are not ready for train test webkb data yet")
+    elif subset == "all":
+        data = load_files_sub(WEBKB_HOME, encoding="latin1", load_content=True, random_state=rnd)
+        data.data = [clean_html_text(text) for text in data.data]
+
+    else:
+        raise ValueError(
+            "subset can only be 'train', 'test' or 'all', got '%s'" % subset)
+
+    if categories is not None:
+        labels = [(data.target_names.index(cat), cat) for cat in categories]
+        # Sort the categories to have the ordering of the labels
+        labels.sort()
+        labels, categories = zip(*labels)
+        mask = np.in1d(data.target, labels)
+        data.filenames = data.filenames[mask]
+        data.target = data.target[mask]
+        # searchsorted to have continuous labels
+        data.target = np.searchsorted(labels, data.target)
+        data.target_names = list(categories)
+        # Use an object array to shuffle: avoids memory copy
+        data_lst = np.array(data.data, dtype=object)
+        data_lst = data_lst[mask]
+        data.data = data_lst.tolist()
+
+    if shuffle:
+        random_state = check_random_state(rnd)
+        indices = np.arange(data.target.shape[0])
+        random_state.shuffle(indices)
+        data.filenames = data.filenames[indices]
+        data.target = data.target[indices]
+        # Use an object array to shuffle: avoids memory copy
+        data_lst = np.array(data.data, dtype=object)
+        data_lst = data_lst[indices]
+        data.data = data_lst.tolist()
+
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    for train_ind, test_ind in indices:
+
+        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind],
+                                             target_names=data.target_names),
+                           test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind],
+                                            target_names=data.target_names))
+
+    if not raw:
+        data = process_data(data, fix_k, min_size, vct)
+
+    return data
+
 
 def split_data(data, splits=2.0, rnd=987654321):
     """
@@ -571,8 +798,7 @@ def split_data(data, splits=2.0, rnd=987654321):
     part1 = bunch.Bunch()
     part2 = bunch.Bunch()
     for train_ind, test_ind in indices:
-        part1 = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]))
-        part2 = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind]))
-
+        part1 = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]))#, target_names=data.target_names))
+        part2 = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind])) #, target_names=data.target_names))
 
     return part1, part2

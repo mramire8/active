@@ -19,6 +19,7 @@ class BaseLearner(object):
         self.seed = seed
         self.randgen = np.random.RandomState()
         self.randgen.seed(seed)
+        random.seed(4321)
         self.subpool = subpool
 
     def pick_next(self, pool=None, k=1):

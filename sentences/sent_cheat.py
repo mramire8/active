@@ -24,6 +24,7 @@ from expert import baseexpert
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 # import random
 import nltk
+from scipy.sparse import vstack
 # import re
 # from scipy.sparse import diags
 #############  COMMAND LINE PARAMETERS ##################
@@ -31,7 +32,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="20news",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -43,7 +44,7 @@ ap.add_argument('--neutral-threshold',
 ap.add_argument('--expert-penalty',
                 metavar='EXPERT_PENALTY',
                 type=float,
-                default=0.1,
+                default=1,
                 help='Expert penalty value for the classifier simulation')
 
 ap.add_argument('--expert',
@@ -55,8 +56,8 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='sr',
-                help='Type of 7 [sr|rnd|fixkSR|]')
+                default='rnd_firstkmax_tfe',
+                help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--trials',
                 metavar='TRIALS',
@@ -73,7 +74,7 @@ ap.add_argument('--folds',
 ap.add_argument('--budget',
                 metavar='BUDGET',
                 type=int,
-                default=200,
+                default=150,
                 help='budget')
 
 ap.add_argument('--step-size',
@@ -103,7 +104,7 @@ ap.add_argument('--cost-model',
 ap.add_argument('--maxiter',
                 metavar='MAXITER',
                 type=int,
-                default=200,
+                default=100,
                 help='Max number of iterations')
 
 ap.add_argument('--seed',
@@ -112,6 +113,9 @@ ap.add_argument('--seed',
                 default=876543210,
                 help='Max number of iterations')
 
+ap.add_argument('--cheating',
+                action="store_true",
+                help='experiment cheating version - study purposes')
 
 args = ap.parse_args()
 rand = np.random.mtrand.RandomState(args.seed)
@@ -120,8 +124,9 @@ sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 print args
 print
 
+
 def sentences_average(pool, vct):
-   ## COMPUTE: AVERAGE SENTENCES IN DOCUMENTS
+    ## COMPUTE: AVERAGE SENTENCES IN DOCUMENTS
     tk = vct.build_tokenizer()
     allwords = 0.
     sum_sent = 0.
@@ -129,7 +134,7 @@ def sentences_average(pool, vct):
     min_sent = 10000
     max_sent = 0
     for docid, label in zip(pool.remaining, pool.target):
-    
+
         doc = pool.text[docid].replace("<br>", ". ")
         doc = doc.replace("<br />", ". ")
 
@@ -156,7 +161,7 @@ def split_data_sentences(data, sent_detector, vct=CountVectorizer()):
     labels = []
     tokenizer = vct.build_tokenizer()
 
-    print ("Spliting into sentences...")
+    print ("Splitting into sentences...")
     ## Convert the documents into sentences: train
     for t, sentences in zip(data.target, sent_detector.batch_tokenize(data.data)):
         sents = [s for s in sentences if len(tokenizer(s)) > 1]
@@ -165,21 +170,177 @@ def split_data_sentences(data, sent_detector, vct=CountVectorizer()):
     return labels, sent_train
 
 
+def get_student(clf, cost_model, sent_clf, t, vct):
+    cheating = args.cheating
+
+    if args.student in "fixkSR":
+        # student = structured.AALStructuredFixk(model=clf, accuracy_model=None, budget=args.budget, seed=t, vcn=vct,
+        #                                         subpool=250, cost_model=cost_model)
+        # student.set_score_model(expert)
+        student = structured.AALStructuredReadingFirstK(model=clf, accuracy_model=None, budget=args.budget, seed=t,
+                                                        vcn=vct,
+                                                        subpool=250, cost_model=cost_model)
+    elif args.student in "fixkSRMax":
+        student = structured.AALStructuredReadingFirstKMax(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                     vcn=vct,
+                                                     subpool=250, cost_model=cost_model)
+    elif args.student in "sr":
+        student = structured.AALStructuredReadingMax(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                     vcn=vct,
+                                                     subpool=250, cost_model=cost_model)
+
+    elif args.student in "sr_tfe":
+        student = structured.AALTFEStructuredReading(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                     vcn=vct,
+                                                     subpool=250, cost_model=cost_model)
+
+    elif args.student in "firstk_tfe":
+        student = structured.AALTFEStructuredReadingFK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                     vcn=vct,
+                                                     subpool=250, cost_model=cost_model)
+    elif args.student in "firstkmax_tfe":
+        student = structured.AALTFEStructuredReadingFK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                     vcn=vct,
+                                                     subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_fk_max)
+
+    elif args.student in "rnd_sr_tfe":
+        student = structured.AALTFERandomThenSR_Max(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_max)
+        student.fn_utility = student.utility_rnd
+
+    elif args.student in "rnd_firstkmax_tfe":
+        student = structured.AALTFERandomThenSR_Max(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_fk_max)
+        student.fn_utility = student.utility_rnd
+
+    elif args.student in "rnd":
+        # student = structured.AALStructuredReadingRandomK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
+        #                                    subpool=250, cost_model=cost_model)
+        # student.set_score_model(clf)  # student classifier
+        # student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
+        raise ValueError("RND sentences selection is not available yet.")
+
+    elif args.student in "sr_seq":
+        student = structured.AALUtilityThenSR_Max(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                  vcn=vct, subpool=250, cost_model=cost_model)
+    elif args.student in "sr_seq_tfe":
+        student = structured.AALTFEUtilityThenSR_Max(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                     vcn=vct, subpool=250, cost_model=cost_model)
+
+    elif args.student in "rnd_max":
+        student = structured.AALRandomReadingMax(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                 vcn=vct, subpool=250, cost_model=cost_model)
+
+
+    elif args.student in "rnd_firstk":
+        student = structured.AALRandomReadingFK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                vcn=vct, subpool=250, cost_model=cost_model)
+
+
+    elif args.student in "firstk_seq":
+        student = structured.AALUtilityThenSR_Firstk(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+
+    elif args.student in "firstkmax_seq":
+        student = structured.AALUtilityThenSR_Firstk(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_fk_max)
+
+    elif args.student in "firstkmax_seq_tfe":
+        student = structured.AALTFEUtilityThenSR_Max(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_fk_max)
+
+    else:
+        raise ValueError("Oops! We do not know that anytime strategy. Try again.")
+
+    student.set_score_model(clf)  # student classifier
+    student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
+    student.set_cheating(cheating)
+
+    return student
+
+
+def update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct):
+    """`
+    Add to P_S all the sentences in the documents with the label of the document
+    :param neutral_data:
+    :param neu_x:
+    :param neu_y:
+    :param labels:
+    :param query_index:
+    :param pool:
+    :param vct:
+    :return:
+    """
+    if not args.cheating:  #prepapre the data to update P_S
+
+        qlbl = []
+        ## for every query find the text and sentences
+        for lbl, index in zip(labels, query_index):
+            subinstances = sent_detector.tokenize(pool.text[index])
+            doc_sentences = vct.transform(subinstances)
+
+            # if student.sent_model is None:  # in the first iteration, add all
+            #     confidence = [True] * len(subinstances)
+            # else:
+            #     confidence = [student.sent_model.predict_proba(s).max() > args.neutral_threshold
+            #                   for s in doc_sentences]
+            # print len(confidence)
+
+            for xik in doc_sentences: #,  confidence:
+
+                # if confident:
+                    if isinstance(neutral_data, list):
+                        neutral_data = xik
+                    else:
+                        neutral_data = vstack([neutral_data, xik], format='csr')
+                    qlbl.append(lbl)
+        neu_y = np.append(neu_y, qlbl)
+        neu_x = neutral_data
+    else:  # for compatibility with cheating experiments
+        return np.array([]),np.array([]),np.array([])
+    return neu_x, neu_y, neutral_data
+
+
+def update_sentence_query(neutral_data, neu_x, neu_y, query, labels):
+    '''
+    Add only the annotated sentence to P_s
+    :param neutral_data:
+    :param neu_x:
+    :param neu_y:
+    :param query:
+    :param labels:
+    :return:
+    '''
+    if not args.cheating:
+        if isinstance(neutral_data, list):
+            neutral_data = query
+        else:
+            for q in query:
+                neutral_data = vstack([neutral_data, q], format='csr')
+        neu_y = np.append(neu_y, labels)
+        neu_x = neutral_data
+    else:
+        return np.array([]),np.array([]),np.array([])
+    return neu_x, neu_y, neutral_data
+
+
 def main():
     accuracies = defaultdict(lambda: [])
+
+    ora_accu = defaultdict(lambda: [])
+    oracle_accuracies =[]
 
     aucs = defaultdict(lambda: [])
 
     x_axis = defaultdict(lambda: [])
 
-    vct = CountVectorizer(encoding='ISO-8859-1', min_df=1, max_df=1.0, binary=True, ngram_range=(1, 1),
-                          token_pattern='\\b\\w+\\b')#, tokenizer=StemTokenizer())
-
-    vct = TfidfVectorizer(encoding='ISO-8859-1', min_df=1, max_df=1.0, binary=False, ngram_range=(1, 1),
-                          token_pattern='\\b\\w+\\b')#, tokenizer=StemTokenizer())
-
-
-    vct_analizer = vct.build_tokenizer()
+    vct = TfidfVectorizer(encoding='ISO-8859-1', min_df=1, max_df=1.0, binary=False, ngram_range=(1, 2),
+                          token_pattern='\\b\\w+\\b')  #, tokenizer=StemTokenizer())
 
     print("Start loading ...")
     # data fields: data, bow, file_names, target_names, target
@@ -191,9 +352,8 @@ def main():
                   ['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware'],
                   ['rec.sport.baseball', 'sci.crypt']]
 
-    min_size = 10 # max(10, args.fixk)
+    min_size = 10
 
-    # if args.fixk < 0:
     args.fixk = None
 
     data, vct = load_from_file(args.train, [categories[3]], args.fixk, min_size, vct, raw=True)
@@ -214,7 +374,6 @@ def main():
     ## delete <br> to "." to recognize as end of sentence
     data.train.data = experiment_utils.clean_html(data.train.data)
     data.test.data = experiment_utils.clean_html(data.test.data)
-
 
     print("Train:{}, Test:{}, {}".format(len(data.train.data), len(data.test.data), data.test.target.shape[0]))
     ## Get the features of the sentence dataset
@@ -250,18 +409,18 @@ def main():
 
     if "neutral" in args.expert:
         expert = baseexpert.NeutralityExpert(exp_clf, threshold=args.neutral_threshold,
-                                         cost_function=cost_model.cost_function)
+                                             cost_function=cost_model.cost_function)
     elif "true" in args.expert:
         expert = baseexpert.TrueOracleExpert(cost_function=cost_model.cost_function)
     elif "pred" in args.expert:
-        expert = baseexpert.PredictingExpert(exp_clf, #threshold=args.neutral_threshold,
-                                        cost_function=cost_model.cost_function)
+        expert = baseexpert.PredictingExpert(exp_clf,  #threshold=args.neutral_threshold,
+                                             cost_function=cost_model.cost_function)
     else:
         raise Exception("We need an expert!")
 
     print "\nExpert: %s " % expert
 
-   #### EXPERT CLASSIFIER: SENTENCES
+    #### EXPERT CLASSIFIER: SENTENCES
     print("Training sentence expert")
     labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector)
 
@@ -269,9 +428,20 @@ def main():
     expert_data.sentence.train.target = np.array(labels)
     expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
 
-    sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
+    sent_clf = None
+    if args.cheating:
+        sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
+        sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
+    #### TESTING THE CLASSIFERS
+    #TODO: comment this for the non-cheating version
+    # print ("*" * 40)
+    # pred_exp = exp_clf.predict(data.test.bow)
+    # print('Accuracy Expert: {0:.4f}'.format(metrics.accuracy_score(data.test.target, pred_exp)))
+    # if not args.cheating:
+    #     pred_sent = sent_clf.predict(data.test.bow)
+    #     print('Accuracy Sentence: {0:.4f}'.format(metrics.accuracy_score(data.test.target, pred_sent)))
+    # print ("*" * 40)
     #### STUDENT CLASSIFIER
     clf = linear_model.LogisticRegression(penalty="l1", C=1)
     # clf = set_classifier(args.classifier)
@@ -302,53 +472,19 @@ def main():
         print "*" * 60
         print "Trial: %s" % t
 
-        if args.student in "fixkSR":
-            # student = structured.AALStructuredFixk(model=clf, accuracy_model=None, budget=args.budget, seed=t, vcn=vct,
-            #                                         subpool=250, cost_model=cost_model)
-            # student.set_score_model(expert)
-            student = structured.AALStructuredReadingFirstK(model=clf, accuracy_model=None, budget=args.budget, seed=t, vcn=vct,
-                                                    subpool=250, cost_model=cost_model)
-            student.set_score_model(clf)  # student classifier
-            student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
-            # TODO: change the following line to update the model in the none cheating version
-            student.set_cheating(True)
-
-        elif args.student in "sr":
-            student = structured.AALStructuredReadingMax(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
-                                               subpool=250, cost_model=cost_model)
-            student.set_score_model(clf)  # student classifier
-            student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
-            # TODO: change the following line to update the model in the none cheating version
-            student.set_cheating(True)
-
-
-        elif args.student in "bestk":
-            student = structured.AALStructured(model=clf, accuracy_model=None, budget=args.budget, seed=t, vcn=vct,
-                                                    subpool=250, cost_model=cost_model)
-            student.set_score_model(exp_clf)
-
-        elif args.student in "rnd":
-            student = structured.AALStructuredReadingRandomK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
-                                               subpool=250, cost_model=cost_model)
-            student.set_score_model(clf)  # student classifier
-            student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
-            # TODO: change the following line to update the model in the none cheating version
-            student.set_cheating(True)
-
-        else:
-            raise ValueError("Oops! We do not know that anytime strategy. Try again.")
+        student = get_student(clf, cost_model, sent_clf, t, vct)
 
         print "\nStudent: %s " % student
 
         train_indices = []
-        neutral_data = []     # save the xik vectors
+        neutral_data = []  # save the xik vectors
         train_x = []
         train_y = []
-        neu_x = []            # data to train the classifier
+        neu_x = []  # data to train the classifier
         neu_y = np.array([])
 
         pool = Bunch()
-        pool.data = data.train.bow.tocsr()   # full words, for training
+        pool.data = data.train.bow.tocsr()  # full words, for training
         pool.text = data.train.data
         pool.target = data.train.target
         pool.predicted = []
@@ -359,7 +495,7 @@ def main():
         iteration = 0
         query_index = None
         query_size = None
-
+        oracle_answers = 0
         while 0 < student.budget and len(pool.remaining) > step_size and iteration <= args.maxiter:
             util = []
 
@@ -373,7 +509,6 @@ def main():
                 print "Bootstrap: %s " % bt.__class__.__name__
                 print
             else:
-                # print "pick instance"
 
                 chosen = student.pick_next(pool=pool, step_size=step_size)
 
@@ -383,11 +518,10 @@ def main():
                 query_size = [1] * len(query_index)
 
             ground_truth = pool.target[query_index]
-            print ground_truth
-            print "-"*40
-            if iteration == 0: ## bootstrap uses ground truth
+
+            if iteration == 0:  ## bootstrap uses ground truth
                 labels = ground_truth
-                spent = [0] * len(ground_truth) ## bootstrap cost is ignored
+                spent = [0] * len(ground_truth)  ## bootstrap cost is ignored
             else:
                 # print "ask labels"
                 labels = expert.label_instances(query, ground_truth)
@@ -402,40 +536,40 @@ def main():
             neutral_answers = np.array([[x, z] for x, y, z in zip(query_index, labels, query_size) if y is None]) \
                 if iteration != 0 else np.array([])
 
-            print labels
-            print "*"*40
+            #### Debugging
+            # print ground_truth.sum(),
+            # tmp = [sent_clf.predict(q) for q in query]
+            # print np.array(tmp).reshape(len(tmp)).sum(),
+            # print np.array(labels).reshape(len(labels)).sum(),
+
+            #### Debugging
+            # if iteration > 0:
+            #     print "--"*40
+            #     print ground_truth, np.sum(ground_truth)
+            #     print useful_answers[:,1], np.sum(useful_answers[:,1])
+            #     for i in chosen_text:
+            #         print i
+            ### end debugging
 
             ## add data recent acquired to train
             if useful_answers.shape[0] != 0:
-                # print "get training"
-                # train_indices.extend(query_index)
                 train_indices.extend(useful_answers[:, 0])
-
+                # print train_indices[50:]
                 # add labels to training
                 train_x = pool.data[train_indices]  # # train with all the words
 
                 # update labels with the expert labels
-                #train_y = pool.target[train_indices]
                 train_y.extend(useful_answers[:, 1])
 
-            if neutral_answers.shape[0] != 0:
-                # current query neutrals
-                qlbl = []
+            #TODO: get the sentence data ready for training
+            # if not student.get_cheating():  #prepapre the data to update P_S
 
-                for xik, lbl in zip(query, labels):
-                    # neutral_data.append(xik)
-                    if isinstance(neutral_data, list):
-                        neutral_data = xik
-                    else:
-                        neutral_data = vstack([neutral_data, xik], format='csr')
-                    qlbl.append(neutral_label(lbl))
+            neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct)
 
-                ## append the labels of the current query
-                neu_y = np.append(neu_y, qlbl)
-                neu_x = neutral_data
-                #end usefulanswers
+            # neu_x, neu_y, neutral_data = update_sentence_query(neutral_data, neu_x, neu_y, query, labels)
 
-
+            if neu_y.shape[0] != neu_x.shape[0]:
+                raise Exception("Training data corrupted!")
             if train_x.shape[0] != len(train_y):
                 raise Exception("Training data corrupted!")
 
@@ -443,10 +577,8 @@ def main():
             pool.remaining.difference_update(query_index)
 
             # retrain the model
-            # current_model = student.train(train_x, train_y)
-            # print "train models"
             current_model = student.train_all(train_x, train_y, neu_x, neu_y)
-            # print "evaluate"
+
             # evaluate and save results
             y_probas = current_model.predict_proba(data.test.bow)
 
@@ -454,42 +586,51 @@ def main():
 
             pred_y = current_model.classes_[np.argmax(y_probas, axis=1)]
 
+            correct_labels = (np.array(ground_truth) == np.array(labels).reshape(len(labels))).sum()
+
             accu = metrics.accuracy_score(data.test.target, pred_y)
 
-            print ("TS:{0}\tAccu:{1:.3f}\tAUC:{2:.3f}\tCost:{3:.2f}\tCumm:{4:.2f}\tSpent:{5}\tneu:{6}\t{7}".format(
+            print ("TS:{0}\tAccu:{1:.3f}\tAUC:{2:.3f}\tCost:{3:.2f}\tCumm:{4:.2f}\tSpent:{5}\tneu:{6}\t{7}\tND:{8}\tTD:{9}\t ora_accu:{10}".format(
                 len(train_indices),
                 accu,
                 auc, query_cost,
                 current_cost,
                 spent,
-                len(neutral_answers), neu_y.shape[0]))
+                len(neutral_answers), neu_y.shape[0], neu_y.sum(), np.array(train_y).sum(), correct_labels))
 
             ## the results should be based on the cost of the labeling
-            if iteration > 0:   # bootstrap iteration
+            if iteration > 0:  # bootstrap iteration
 
-                student.budget -= query_cost ## Bootstrap doesn't count
-
+                student.budget -= query_cost  ## Bootstrap doesn't count
+                # oracle accuracy (from queries)
+                oracle_answers += correct_labels
                 x_axis_range = current_cost
                 x_axis[x_axis_range].append(current_cost)
                 ## save results
                 accuracies[x_axis_range].append(accu)
                 aucs[x_axis_range].append(auc)
+                ora_accu[x_axis_range].append(1. * correct_labels/len(ground_truth))
                 # partial trial results
                 trial_accu.append([x_axis_range, accu])
                 trial_aucs.append([x_axis_range, auc])
-
+                # oracle_accuracies[x_axis_range].append(oracle_answers)
             iteration += 1
             # end of budget loop
 
         tac.append(trial_accu)
         tau.append(trial_aucs)
+        oracle_accuracies.append(1.*oracle_answers / (len(train_indices)-bootstrap_size))
+        print "Trial: {}, Oracle right answers: {}, Iteration: {}, Labels:{}, ACCU-OR:{}".format(t, oracle_answers,
+                 iteration, len(train_indices)-bootstrap_size,1.*oracle_answers / (len(train_indices)-bootstrap_size))
         #end trial loop
     if args.cost_function not in "uniform":
         accuracies = experiment_utils.extrapolate_trials(tac, cost_25=parameters[1][1], step_size=args.step_size)
         aucs = experiment_utils.extrapolate_trials(tau, cost_25=parameters[1][1], step_size=args.step_size)
-
+    print "\nAverage oracle accuracy: ", np.array(oracle_accuracies).mean()
     print("Elapsed time %.3f" % (time.time() - t0))
-    experiment_utils.print_extrapolated_results(accuracies, aucs, file_name=args.student)
+    cheating = "CHEATING" if args.cheating else "NOCHEAT"
+    experiment_utils.print_extrapolated_results(accuracies, aucs, file_name=args.train+"-"+cheating+"-"+args.student)
+    experiment_utils.oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.student)
 
 
 def format_query(query_labels):

@@ -11,26 +11,30 @@ sys.path.append(os.path.abspath("."))
 sys.path.append(os.path.abspath("../"))
 sys.path.append(os.path.abspath("../experiment/"))
 
-from experiment_utils import *
+
+from experiment.experiment_utils import split_data_sentences, parse_parameters_mat, clean_html, set_cost_model
 import argparse
 import numpy as np
 from sklearn.datasets.base import Bunch
-from datautil.load_data import load_from_file
+from datautil.load_data import load_from_file, split_data
 from sklearn import linear_model
 import time
 
 from collections import defaultdict
 from strategy import structured
 from expert import baseexpert
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import random
 import nltk
+from scipy.sparse import vstack
+from sklearn import metrics
+
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="pan",
+                default="20news",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -42,7 +46,7 @@ ap.add_argument('--neutral-threshold',
 ap.add_argument('--expert-penalty',
                 metavar='EXPERT_PENALTY',
                 type=float,
-                default=0.3,
+                default=1,
                 help='Expert penalty value for the classifier simulation')
 
 ap.add_argument('--trials',
@@ -160,8 +164,127 @@ def sentences_average(pool, vct):
     print("Total sentences fragments %s" % sum_sent)
     print("Average size of sentence %s" % (average_words / allwords))
 
+def get_data(train, cats, fixk, min_size, vct, raw):
+    min_size = 10
+
+    args.fixk = None
+
+    data, vct = load_from_file(train, cats, fixk, min_size, vct, raw=raw)
+
+    print("Data %s" % args.train)
+    print("Data size %s" % len(data.train.data))
+
+    parameters = parse_parameters_mat(args.cost_model)
+
+    print "Cost Parameters %s" % parameters
+
+    cost_model = set_cost_model(args.cost_function, parameters=parameters)
+    print "\nCost Model: %s" % cost_model.__class__.__name__
+
+    ### SENTENCE TRANSFORMATION
+    sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
+
+    ## delete <br> to "." to recognize as end of sentence
+    data.train.data = clean_html(data.train.data)
+    data.test.data = clean_html(data.test.data)
+
+    print("Train:{}, Test:{}, {}".format(len(data.train.data), len(data.test.data), data.test.target.shape[0]))
+    ## Get the features of the sentence dataset
+
+    ## create splits of data: pool, test, oracle, sentences
+    expert_data = Bunch()
+    train_test_data = Bunch()
+
+    expert_data.sentence, train_test_data.pool = split_data(data.train)
+    expert_data.oracle, train_test_data.test = split_data(data.test)
+
+    data.train.data = train_test_data.pool.train.data
+    data.train.target = train_test_data.pool.train.target
+
+    data.test.data = train_test_data.test.train.data
+    data.test.target = train_test_data.test.train.target
+
+    ## convert document to matrix
+    data.train.bow = vct.fit_transform(data.train.data)
+    data.test.bow = vct.transform(data.test.data)
+
+    #### EXPERT CLASSIFIER: ORACLE
+    print("Training Oracle expert")
+
+    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct)
+
+    expert_data.oracle.train.data = sent_train
+    expert_data.oracle.train.target = np.array(labels)
+    expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
+
+    exp_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
+    exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
+
+    #### EXPERT CLASSIFIER: SENTENCES
+    print("Training sentence expert")
+    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct)
+
+    expert_data.sentence.train.data = sent_train
+    expert_data.sentence.train.target = np.array(labels)
+    expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
+
+    sent_clf = None
+    # if args.cheating:
+    sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
+    sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
+
+    return exp_clf, data, vct, cost_model, sent_clf
 
 ####################### MAIN ####################
+def get_sentences_by_method(pool, student, test_sent):
+    test_sent = []
+
+    list_pool = list(pool.remaining)
+    # indices = rand.permutation(len(pool.remaining))
+    # remaining = [list_pool[index] for index in indices]
+    target_sent = []
+    for i in list_pool:
+        _, sent_bow, sent_txt = student.x_utility(pool.data[i], pool.text[i])
+        if isinstance(test_sent, list):
+            test_sent = sent_bow
+        else:
+            test_sent = vstack([test_sent, sent_bow], format='csr')
+        target_sent.append(pool.target[i])
+    return test_sent, target_sent
+
+from scipy.sparse import diags
+
+def sentence2values(doc_text, sent_detector, score_model, vcn):
+        np.set_printoptions(precision=4)
+        sents = sent_detector.tokenize(doc_text)
+        sents_feat = vcn.transform(sents)
+        coef = score_model.coef_[0]
+        dc = diags(coef, 0)
+
+        mm = sents_feat * dc  # sentences feature vectors \times diagonal of coeficients. sentences by features
+        return mm, sents, sents_feat
+
+
+def score_top_feat(pool, sent_detector, score_model, vcn):
+    test_sent = []
+
+    list_pool = list(pool.remaining)
+    # indices = rand.permutation(len(pool.remaining))
+    # remaining = [list_pool[index] for index in indices]
+    target_sent = []
+    for i in list_pool:
+        mm, _, sent_bow = sentence2values(pool.text[i], sent_detector, score_model, vcn)
+        max_vals = np.argmax(mm.max(axis=1))
+
+        if isinstance(test_sent, list):
+            test_sent = sent_bow[max_vals]
+        else:
+            test_sent = vstack([test_sent, sent_bow[max_vals]], format='csr')
+        target_sent.append(pool.target[i])
+    return test_sent, target_sent
+
+
+
 def main():
     accuracies = defaultdict(lambda: [])
 
@@ -169,8 +292,10 @@ def main():
 
     x_axis = defaultdict(lambda: [])
 
-    vct = CountVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=True, ngram_range=(3, 3),
-                          token_pattern='\\b\\w+\\b')#, tokenizer=StemTokenizer())
+    # vct = CountVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=True, ngram_range=(1, 3),
+    #                       token_pattern='\\b\\w+\\b')#, tokenizer=StemTokenizer())
+    vct = TfidfVectorizer(encoding='ISO-8859-1', min_df=1, max_df=1.0, binary=False, ngram_range=(1, 2),
+                          token_pattern='\\b\\w+\\b')  #, tokenizer=StemTokenizer())
     vct_analizer = vct.build_tokenizer()
 
     print("Start loading ...")
@@ -188,30 +313,32 @@ def main():
     if args.fixk < 0:
         args.fixk = None
 
-    data, vct = load_from_file(args.train, [categories[3]], args.fixk, min_size, vct, raw=True)
+    # data, vct = load_from_file(args.train, [categories[3]], args.fixk, min_size, vct, raw=True)
+    #
+    # print("Data %s" % args.train)
+    # print("Data size %s" % len(data.train.data))
+    #
+    # parameters = parse_parameters_mat(args.cost_model)
+    #
+    # print "Cost Parameters %s" % parameters
+    #
+    # cost_model = set_cost_model(args.cost_function, parameters=parameters)
+    # print "\nCost Model: %s" % cost_model.__class__.__name__
+    #
+    # #### STUDENT CLASSIFIER
+    # clf = linear_model.LogisticRegression(penalty="l1", C=1)
+    # # clf = set_classifier(args.classifier)
+    # print "\nStudent Classifier: %s" % clf
+    #
+    # #### EXPERT CLASSIFIER
+    #
+    # exp_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
+    # exp_clf.fit(data.test.bow, data.test.target)
+    # expert = baseexpert.NeutralityExpert(exp_clf, threshold=args.neutral_threshold,
+    #                                      cost_function=cost_model.cost_function)
 
-    print("Data %s" % args.train)
-    print("Data size %s" % len(data.train.data))
-
-    parameters = parse_parameters_mat(args.cost_model)
-
-    print "Cost Parameters %s" % parameters
-
-    cost_model = set_cost_model(args.cost_function, parameters=parameters)
-    print "\nCost Model: %s" % cost_model.__class__.__name__
-
-    #### STUDENT CLASSIFIER
-    clf = linear_model.LogisticRegression(penalty="l1", C=1)
-    # clf = set_classifier(args.classifier)
-    print "\nStudent Classifier: %s" % clf
-
-    #### EXPERT CLASSIFIER
-
-    exp_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    exp_clf.fit(data.test.bow, data.test.target)
-    expert = baseexpert.NeutralityExpert(exp_clf, threshold=args.neutral_threshold,
-                                         cost_function=cost_model.cost_function)
-    print "\nExpert: %s " % expert
+    exp_clf, data, vct, cost_model, sent_clf = get_data(args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
+    print "\nExpert: %s " % exp_clf
 
     #### ACTIVE LEARNING SETTINGS
     step_size = args.step_size
@@ -220,17 +347,22 @@ def main():
 
     print ("Sentences scoring")
     t0 = time.time()
-    tac = []
-    tau = []
     ### experiment starts
+    clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
 
-    student = structured.AALStructured(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
-                                       subpool=250, cost_model=cost_model)
-    student.set_score_model(exp_clf)
+    # student = structured.AALStructured(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
+    #                                    subpool=250, cost_model=cost_model)
+    # student.set_score_model(exp_clf)
 
-    fixk = structured.AALStructuredFixk(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
-                                        subpool=250, cost_model=cost_model)
-    fixk.set_score_model(exp_clf)
+    student = structured.AALStructuredReading(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
+                                              subpool=250, cost_model=cost_model)
+    student.set_score_model(exp_clf)  # expert model
+    student.set_sentence_model(sent_clf)  # expert sentence model
+
+
+    # fixk = structured.AALStructuredFixk(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
+    #                                     subpool=250, cost_model=cost_model)
+    # fixk.set_score_model(exp_clf)
 
     coef = exp_clf.coef_[0]
     feats = vct.get_feature_names()
@@ -248,7 +380,38 @@ def main():
     sum_sent = 0
     average_words = 0.
 
-    print sentences_average(pool, vct)
+    # print sentences_average(pool, vct)
+    import itertools
+
+    fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
+
+    if True:
+        ## create data for testing method
+        # select the first sentence always
+        print args.train
+        print "Testing size: %s" % len(pool.target)
+        print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
+
+        student.fn_utility = student.utility_one
+        for fn in fns:
+            ## firstk
+            test_sent = []
+            student.score = fn
+            test_sent, target_sent = get_sentences_by_method(pool, student, test_sent)
+            predict = exp_clf.predict(test_sent)
+
+            accu = metrics.accuracy_score(pool.target, predict)
+            print "Accu %s \t%s" % (student.score.__name__, accu)
+        # print "Targets %s" % np.unique(target_sent)
+        # print "Targets %s" % np.unique(pool.target)
+        # print
+
+        test_sent, target_sent = score_top_feat(pool, sent_detector, exp_clf, vct)
+        predict = exp_clf.predict(test_sent)
+
+        accu = metrics.accuracy_score(pool.target, predict)
+        print "Accu %s \t%s" % (student.score.__name__, accu)
+
 
     if False:
         random.seed(args.seed)
@@ -262,18 +425,6 @@ def main():
         queries = []
 
         doctext = pool.text
-        # ## examples
-        # doctext = ['this is a great movie',
-        #     'I hate the acting',
-        #     'this goes straight to dvd',
-        #     'I wasted my time',
-        #     'just horrible',
-        #     'this is a classic',
-        #     'this is the perfect movie for the weekend',
-        #     'I love this movie']
-        # lbl_example = [1,0,0,0,0,1,1,1]
-        # rnd_set = zip(range(8),lbl_example)
-        ## end example
 
         print "ID\tLABEL\tTOTSENTS\tTKSCORE\tMAXKSCORE\tFK\tLK\tTOPK"
         for docid, label in rnd_set:

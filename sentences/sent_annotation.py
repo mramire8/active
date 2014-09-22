@@ -263,8 +263,6 @@ def main():
 
     print ("Sentence Classification")
     t0 = time.time()
-    tac = []
-    tau = []
 
     # predition = exp_clf.predict(data.train.bow)
 
@@ -294,44 +292,44 @@ def main():
 
 
 
-    print "*"*50
-    print "Positive"
-    for d in most_post[:10]:
-        print d,
-        print predictions[d],
-        print data.train.target[d],
-        print data.train.data[d]
-
-        mm = data.train.bow[d] * dc  # sentences feature vectors \times diagonal of coeficients. sentences by features
-        print "\n".join("%.3f / %s" % (v, n) for v, f, n in zip(mm.A[0], data.train.bow[d].A[0,:], fn) if f > 0)
-        print "-"*20
-
-    print "*"*50
-    print "Negative"
-    for d in most_post[-10:]:
-        print d,
-        print predictions[d],
-        print data.train.target[d],
-        print data.train.data[d]
-        mm = data.train.bow[d] * dc  # sentences feature vectors \times diagonal of coeficients. sentences by features
-        # print mm[mm > 0]
-
-        print "\n".join("%.3f / %s" % (v, n) for v, f, n in zip(mm.A[0], data.train.bow[d].A[0,:], fn) if f > 0)
-        print "-"*20
-
-    print "*"*50
-    print "Middle"
-    m = len(most_post) / 2
-    for d in most_post[m-50:m+50]:
-        print d,
-        print predictions[d],
-        print data.train.target[d],
-        print data.train.data[d]
-        mm = data.train.bow[d] * dc  # sentences feature vectors \times diagonal of coeficients. sentences by features
-        # print mm[mm > 0]
-
-        print "\n".join("%.3f / %s" % (v, n) for v, f, n in zip(mm.A[0], data.train.bow[d].A[0,:], fn) if f > 0)
-        print "-"*20
+    # print "*"*50
+    # print "Positive"
+    # for d in most_post[:10]:
+    #     print d,
+    #     print predictions[d],
+    #     print data.train.target[d],
+    #     print data.train.data[d]
+    #
+    #     mm = data.train.bow[d] * dc  # sentences feature vectors \times diagonal of coeficients. sentences by features
+    #     print "\n".join("%.3f / %s" % (v, n) for v, f, n in zip(mm.A[0], data.train.bow[d].A[0,:], fn) if f > 0)
+    #     print "-"*20
+    #
+    # print "*"*50
+    # print "Negative"
+    # for d in most_post[-10:]:
+    #     print d,
+    #     print predictions[d],
+    #     print data.train.target[d],
+    #     print data.train.data[d]
+    #     mm = data.train.bow[d] * dc  # sentences feature vectors \times diagonal of coeficients. sentences by features
+    #     # print mm[mm > 0]
+    #
+    #     print "\n".join("%.3f / %s" % (v, n) for v, f, n in zip(mm.A[0], data.train.bow[d].A[0,:], fn) if f > 0)
+    #     print "-"*20
+    #
+    # print "*"*50
+    # print "Middle"
+    # m = len(most_post) / 2
+    # for d in most_post[m-50:m+50]:
+    #     print d,
+    #     print predictions[d],
+    #     print data.train.target[d],
+    #     print data.train.data[d]
+    #     mm = data.train.bow[d] * dc  # sentences feature vectors \times diagonal of coeficients. sentences by features
+    #     # print mm[mm > 0]
+    #
+    #     print "\n".join("%.3f / %s" % (v, n) for v, f, n in zip(mm.A[0], data.train.bow[d].A[0,:], fn) if f > 0)
+    #     print "-"*20
 
 
 

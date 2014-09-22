@@ -142,13 +142,31 @@ def plot_performance(x, y, title, xaxis, yaxis):
     plt.xlabel(xaxis)
     plt.ylabel(yaxis)
     plt.legend()
-    plt.plot(x, y, '--bo', label=yaxis)
+    plt.plot(x, y, '--bo')
     # plt.hold(True)
     # x = np.array([min(x), max(x)])
     # y = intercept + slope * x
     # plt.plot(x, y, 'r-')
-    plt.savefig('{0}.pdf'.format(yaxis))
+    plt.savefig('{1}-{0}.pdf'.format(yaxis, title))
     # plt.show()
+
+def oracle_accuracy(oracle, file_name="out"):
+    # print the cost x-axis
+    print
+    print "Number of x points %s" % len(oracle.keys())
+
+    # print the accuracies
+
+    x = sorted(oracle.keys())
+    y = [np.mean(oracle[xi]) for xi in x]
+    z = [np.std(oracle[xi]) for xi in x]
+    w = [np.size(oracle[xi]) for xi in x]
+    print
+    print "Cost\tAccu_Mean\tAccu_Std"
+    for a, b, c, d in zip(x, y, z, w):
+        print "%0.3f\t%0.3f\t%0.3f\t%d" % (a, b, c, d)
+    plot_performance(x, y, "Oracle Accuracy Performance " + file_name, "Cost", "Oracle Accuracy")
+    print_file(x, y, z, "{}-accuracy.txt".format("oracle-"+file_name))
 
 
 def print_extrapolated_results(accuracies, aucs, file_name="out"):
@@ -167,7 +185,7 @@ def print_extrapolated_results(accuracies, aucs, file_name="out"):
     for a, b, c, d in zip(x, y, z, w):
         print "%0.3f\t%0.3f\t%0.3f\t%d" % (a, b, c, d)
 
-    plot_performance(x, y, "Accuracy Performance", "Cost", "Accuracy")
+    plot_performance(x, y, "Accuracy Performance " + file_name, "Cost", "Accuracy")
     print_file(x, y, z, "{}-accuracy.txt".format(file_name))
 
     x = sorted(aucs.keys())
@@ -178,7 +196,7 @@ def print_extrapolated_results(accuracies, aucs, file_name="out"):
     for a, b, c in zip(x, y, z):
         print "%0.3f\t%0.3f\t%0.3f" % (a, b, c)
 
-    plot_performance(x, y, "AUC Performance", "Cost", "AUC")
+    plot_performance(x, y, "AUC Performance " + file_name, "Cost", "AUC")
     print_file(x, y, z, "{}-auc.txt".format(file_name))
 
 
@@ -244,6 +262,7 @@ def clean_html(data):
     print ("Cleaning text ... ")
     for text in data:
         doc = text.replace("<br>", ". ")
+        # doc = doc.replace("\r\n", ". ")
         doc = doc.replace("<br />", ". ")
         doc = re.sub(r"\.", ". ", doc)
         # doc = re.sub(r"x*\.x*", ". ", doc)

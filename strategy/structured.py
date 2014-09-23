@@ -742,7 +742,7 @@ class AALTFEUtilityThenSR_Max(AALUtilityThenStructuredReading):
 
     def pick_next(self, pool=None, step_size=1):
         # return all order by utility of x
-        chosen = super(AALTFEUtilityThenSR_Max, self).pick_next(pool=pool, step_size=pool.data.shape[0])
+        chosen = super(AALTFEUtilityThenSR_Max, self).pick_next(pool=pool, step_size=self.subpool)
 
         pred_class = []
         chosen_0 = []
@@ -770,10 +770,10 @@ class AALTFEUtilityThenSR_Max(AALUtilityThenStructuredReading):
         return chosen
 
 
-class AALTFERandomThenSR_Max(AALUtilityThenStructuredReading):
+class AALTFERandomThenSR(AALUtilityThenStructuredReading):
     def __init__(self, model=None, accuracy_model=None, budget=None, seed=None, vcn=None, subpool=None,
                  cost_model=None, fk=1):
-        super(AALTFERandomThenSR_Max, self).__init__(model=model, accuracy_model=accuracy_model, budget=budget,
+        super(AALTFERandomThenSR, self).__init__(model=model, accuracy_model=accuracy_model, budget=budget,
                                                       seed=seed,
                                                       cost_model=cost_model, vcn=vcn, subpool=subpool)
         self.score = self.score_max  # sentence score
@@ -781,12 +781,13 @@ class AALTFERandomThenSR_Max(AALUtilityThenStructuredReading):
         self.first_k = fk
 
     def pick_random(self, pool=None, step_size=1):
-        list_pool = list(pool.remaining)
-        indices = self.rnd_vals.permutation(len(pool.remaining))
-        remaining = [list_pool[index] for index in indices]
-
-        chosen_x = remaining[:int(step_size)]  #index and k of chosen
-        # print "initial:", chosen_x
+        ## version 1
+        # list_pool = sorted(list(pool.remaining))
+        # indices = self.rnd_vals.permutation(len(pool.remaining))
+        # remaining = [list_pool[index] for index in indices[:self.subpool]]
+        # chosen_x = remaining[:int(step_size)]  #index and k of chosen
+        ## version 2:
+        chosen_x = pool.remaining[:step_size]
         #After utility, pick the best sentence of each document
         chosen = self.pick_next_sentence(chosen_x, pool=pool)
         # print "after:", [x[0] for x in chosen]
@@ -794,7 +795,7 @@ class AALTFERandomThenSR_Max(AALUtilityThenStructuredReading):
 
     def pick_next(self, pool=None, step_size=1):
         # return all order by utility of x
-        chosen = self.pick_random(pool=pool, step_size=pool.data.shape[0])
+        chosen = self.pick_random(pool=pool, step_size=self.subpool)
 
         pred_class = []
         chosen_0 = []

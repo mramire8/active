@@ -56,7 +56,7 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='rnd_sr_tfe',
+                default='rnd_firstkmax_tfe',
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--trials',
@@ -433,15 +433,6 @@ def main():
         sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
         sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
-    #### TESTING THE CLASSIFERS
-    #TODO: comment this for the non-cheating version
-    # print ("*" * 40)
-    # pred_exp = exp_clf.predict(data.test.bow)
-    # print('Accuracy Expert: {0:.4f}'.format(metrics.accuracy_score(data.test.target, pred_exp)))
-    # if not args.cheating:
-    #     pred_sent = sent_clf.predict(data.test.bow)
-    #     print('Accuracy Sentence: {0:.4f}'.format(metrics.accuracy_score(data.test.target, pred_sent)))
-    # print ("*" * 40)
     #### STUDENT CLASSIFIER
     clf = linear_model.LogisticRegression(penalty="l1", C=1)
     # clf = set_classifier(args.classifier)
@@ -488,7 +479,7 @@ def main():
         pool.text = data.train.data
         pool.target = data.train.target
         pool.predicted = []
-        pool.remaining = set(range(pool.data.shape[0]))  # indices of the pool
+        pool.remaining = list(rand.permutation(pool.data.shape[0]))  # indices of the pool
 
         bootstrapped = False
         current_cost = 0
@@ -500,13 +491,22 @@ def main():
             util = []
 
             if not bootstrapped:
-                ## random from each bootstrap
-                bt = randomsampling.BootstrapFromEach(t * 10)
-
-                query_index = bt.bootstrap(pool=pool, k=bootstrap_size)
+                # k = int(step_size / 2)
+                # data_points = defaultdict(lambda: [])
+                #
+                # for i in pool.remaining:
+                #     data_points[pool.target[i]].append(i)
+                #
+                # query_index = []
+                # for label in data_points.keys():
+                #     candidates = data_points[label]
+                #     indices = rand.permutation(len(candidates))
+                #     query_index.extend([candidates[index] for index in indices[:k]])
+                #
+                query_index = pool.remaining[:bootstrap_size]
                 bootstrapped = True
                 query = pool.data[query_index]
-                print "Bootstrap: %s " % bt.__class__.__name__
+
                 print
             else:
 
@@ -536,37 +536,17 @@ def main():
             neutral_answers = np.array([[x, z] for x, y, z in zip(query_index, labels, query_size) if y is None]) \
                 if iteration != 0 else np.array([])
 
-            #### Debugging
-            # print ground_truth.sum(),
-            # tmp = [sent_clf.predict(q) for q in query]
-            # print np.array(tmp).reshape(len(tmp)).sum(),
-            # print np.array(labels).reshape(len(labels)).sum(),
-
-            #### Debugging
-            # if iteration > 0:
-            #     print "--"*40
-            #     print ground_truth, np.sum(ground_truth)
-            #     print useful_answers[:,1], np.sum(useful_answers[:,1])
-            #     for i in chosen_text:
-            #         print i
-            ### end debugging
-
             ## add data recent acquired to train
             if useful_answers.shape[0] != 0:
                 train_indices.extend(useful_answers[:, 0])
-                print train_indices[50:]
+                print train_indices
                 # add labels to training
                 train_x = pool.data[train_indices]  # # train with all the words
 
                 # update labels with the expert labels
                 train_y.extend(useful_answers[:, 1])
 
-            #TODO: get the sentence data ready for training
-            # if not student.get_cheating():  #prepapre the data to update P_S
-
             neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct)
-
-            # neu_x, neu_y, neutral_data = update_sentence_query(neutral_data, neu_x, neu_y, query, labels)
 
             if neu_y.shape[0] != neu_x.shape[0]:
                 raise Exception("Training data corrupted!")
@@ -574,7 +554,8 @@ def main():
                 raise Exception("Training data corrupted!")
 
             # remove labels from pool
-            pool.remaining.difference_update(query_index)
+            for qi in query_index:
+                pool.remaining.remove(qi)
 
             # retrain the model
             current_model = student.train_all(train_x, train_y, neu_x, neu_y)

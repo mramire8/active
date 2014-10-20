@@ -1,6 +1,6 @@
 __author__ = 'mramire8'
 __copyright__ = "Copyright 2013, ML Lab"
-__version__ = "0.2"
+__version__ = "0.1"
 __status__ = "Development"
 
 import sys
@@ -11,7 +11,7 @@ sys.path.append(os.path.abspath("../"))
 sys.path.append(os.path.abspath("../experiment/"))
 
 
-from experiment.experiment_utils import split_data_sentences, parse_parameters_mat, clean_html, set_cost_model
+from experiment.experiment_utils import split_data_first1sentences, parse_parameters_mat, clean_html, set_cost_model
 import argparse
 import numpy as np
 from sklearn.datasets.base import Bunch
@@ -37,11 +37,6 @@ ap.add_argument('--train',
                 default="imdb",
                 help='training data (libSVM format)')
 
-ap.add_argument('--neutral-threshold',
-                metavar='NEUTRAL',
-                type=float,
-                default=.4,
-                help='neutrality threshold of uncertainty')
 
 ap.add_argument('--expert-penalty',
                 metavar='EXPERT_PENALTY',
@@ -49,41 +44,13 @@ ap.add_argument('--expert-penalty',
                 default=1.0,
                 help='Expert penalty value for the classifier simulation')
 
-ap.add_argument('--trials',
-                metavar='TRIALS',
-                type=int,
-                default=5,
-                help='number of trials')
-
-ap.add_argument('--folds',
-                metavar='FOLDS',
-                type=int,
-                default=1,
-                help='number of folds')
-
-ap.add_argument('--budget',
-                metavar='BUDGET',
-                type=int,
-                default=200,
-                help='budget')
-
-ap.add_argument('--step-size',
-                metavar='STEP_SIZE',
-                type=int,
-                default=10,
-                help='instances to acquire at every iteration')
-
-ap.add_argument('--bootstrap',
-                metavar='BOOTSTRAP',
-                type=int,
-                default=50,
-                help='size of the initial labeled dataset')
 
 ap.add_argument('--cost-function',
                 metavar='COST_FUNCTION',
                 type=str,
                 default="uniform",
                 help='cost function of the x-axis [uniform|log|linear|direct]')
+
 ap.add_argument('--cost-model',
                 metavar='COST_MODEL',
                 type=str,
@@ -96,11 +63,6 @@ ap.add_argument('--fixk',
                 default=10,
                 help='fixed k number of words')
 
-ap.add_argument('--maxiter',
-                metavar='MAXITER',
-                type=int,
-                default=200,
-                help='Max number of iterations')
 
 ap.add_argument('--seed',
                 metavar='SEED',
@@ -108,11 +70,6 @@ ap.add_argument('--seed',
                 default=876543210,
                 help='Max number of iterations')
 
-ap.add_argument('--lambda-value',
-                metavar='LAMBDA_VALUE',
-                type=float,
-                default=1.0,
-                help='tradeoff paramters for the objective function ')
 
 ap.add_argument('--student',
                 metavar='STUDENT',
@@ -138,7 +95,7 @@ def print_features(coef, names):
     """ Print sorted list of non-zero features/weights. """
     print "\n".join('%s/%.2f' % (names[j], coef[j]) for j in np.argsort(coef)[::-1] if coef[j] != 0)
 
-def sentences_average(pool, vct): 
+def sentences_average(pool, vct):
    ## COMPUTE: AVERAGE SENTENCES IN DOCUMENTS
     tk = vct.build_tokenizer()
     allwords = 0.
@@ -147,7 +104,7 @@ def sentences_average(pool, vct):
     min_sent = 10000
     max_sent = 0
     for docid, label in zip(pool.remaining, pool.target):
-    
+
         doc = pool.text[docid].replace("<br>", ". ")
         doc = doc.replace("<br />", ". ")
         isent = sent_detector.tokenize(doc)
@@ -167,6 +124,7 @@ def sentences_average(pool, vct):
 
 def get_data(clf, train, cats, fixk, min_size, vct, raw):
     import copy
+
     min_size = 10
 
     args.fixk = None
@@ -191,7 +149,6 @@ def get_data(clf, train, cats, fixk, min_size, vct, raw):
     data.test.data = clean_html(data.test.data)
 
     print("Train:{}, Test:{}, {}".format(len(data.train.data), len(data.test.data), data.test.target.shape[0]))
-    ## Get the features of the sentence dataset
 
     ## create splits of data: pool, test, oracle, sentences
     expert_data = Bunch()
@@ -211,9 +168,16 @@ def get_data(clf, train, cats, fixk, min_size, vct, raw):
     data.test.bow = vct.transform(data.test.data)
 
     #### EXPERT CLASSIFIER: ORACLE
-    print("Training Oracle expert")
+    print("\nTraining Oracle expert\n"+"-"*40)
+    print("Expert training data in docs: %s" % len(expert_data.oracle.train.data))
+    labels, sent_train, _, _, f1 = split_data_first1sentences(expert_data.oracle.train, sent_detector, vct, limit=0)
+    print("Expert training data in sentences: %s, %s" % (len(labels), len(sent_train)))
+    total = len(labels)
+    print("Sentence distribution with not cleaning (y=1): %.4f" % (1.*np.sum(labels)/len(labels)))
+    print("Number of first sentences: %s" % len(f1))
+    garbage1 = [s for s in f1 if len(s) <= 2]
 
-    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=1)
+    print "Garbage in the first sentence: %s" % len(garbage1)
 
     expert_data.oracle.train.data = sent_train
     expert_data.oracle.train.target = np.array(labels)
@@ -223,19 +187,38 @@ def get_data(clf, train, cats, fixk, min_size, vct, raw):
     exp_clf = copy.copy(clf)
     exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
 
+
+    print("\nRemoving 1 character\n"+"-"*40)
+    labels, sent_train, dumped1, dumped_lbl,_ = split_data_first1sentences(expert_data.oracle.train, sent_detector, vct, limit=1)
+    print("Expert training data in sentences: %s, %s" % (len(labels), len(sent_train)))
+    print("Removed sentences: %s" % (total - len(labels)))
+    pred = exp_clf.predict(vct.transform(dumped1))
+    print("Dumped sentence distribution with limit=1 (y=1): %.4f" % (1.*np.sum(dumped_lbl)/len(dumped_lbl)))
+    print "Distribution of dumped by the oracle (y=1): \t%.4f" % (1.*pred.sum()/len(pred))
+    print("\nRemoving 2 Characters\n"+"-"*40)
+    labels, sent_train, dumped2, dumped_lbl,_ = split_data_first1sentences(expert_data.oracle.train, sent_detector, vct, limit=2)
+    print("Expert training data in sentences: %s, %s" % (len(labels), len(sent_train)))
+    print("Removed sentences: %s" % (total - len(labels)))
+    print("Dumped sentence distribution with limit=1 (y=1): %.4f" % (1.*np.sum(dumped_lbl)/len(dumped_lbl)))
+    pred = exp_clf.predict(vct.transform(dumped2))
+    print "Distribution of dumped by the oracle (y=1): \t%.4f" % (1.*pred.sum()/len(pred))
+
+
+
     #### EXPERT CLASSIFIER: SENTENCES
-    print("Training sentence expert")
-    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=1)
-
-    expert_data.sentence.train.data = sent_train
-    expert_data.sentence.train.target = np.array(labels)
-    expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
-
     sent_clf = None
-    # if args.cheating:
-    sent_clf = copy.copy(clf)
-    # sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
+    if False:
+        print("Training sentence expert")
+        labels, sent_train = split_data_first1sentences(expert_data.sentence.train, sent_detector, vct, limit=0)
+
+        expert_data.sentence.train.data = sent_train
+        expert_data.sentence.train.target = np.array(labels)
+        expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
+
+        # if args.cheating:
+        sent_clf = copy.copy(clf)
+        # sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
+        sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
     return exp_clf, data, vct, cost_model, sent_clf
 
@@ -293,6 +276,7 @@ def score_top_feat(pool, sent_detector, score_model, vcn):
 
 
 def main():
+    t0 = time.time()
 
     # vct = CountVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=True, ngram_range=(1, 3),
     #                       token_pattern='\\b\\w+\\b')#, tokenizer=StemTokenizer())
@@ -315,79 +299,16 @@ def main():
         args.fixk = None
 
     clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    # clf = LogisticRegressionAdaptive(penalty='l1', C=args.expert_penalty)
 
     exp_clf, data, vct, cost_model, sent_clf = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
+
     print "\nExpert: %s " % exp_clf
 
     print ("Sentences scoring")
-    t0 = time.time()
     ### experiment starts
-
-    student = structured.AALStructuredReading(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
-                                              subpool=250, cost_model=cost_model)
-    student.set_score_model(exp_clf)  # expert model
-    student.set_sentence_model(sent_clf)  # expert sentence model
-    student.limit = 1
-    print "Expert: :", exp_clf
-    print "Sentence:", sent_clf
-
-    coef = exp_clf.coef_[0]
-    feats = vct.get_feature_names()
-    print "*" * 60
-    # print_features(coef, feats)
-    print "*" * 60
-
-    pool = Bunch()
-    pool.data = data.train.bow.tocsr()   # full words, for training
-    pool.text = data.train.data
-    pool.target = data.train.target
-    pool.predicted = []
-    pool.remaining = set(range(pool.data.shape[0]))  # indices of the pool
-
-    # print sentences_average(pool, vct)
-
-    fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
-
-    if True:
-        ## create data for testing method
-        # select the first sentence always
-        print args.train
-        print "Testing size: %s" % len(pool.target)
-        print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
-
-        student.fn_utility = student.utility_one
-        offset = 0
-        for fn in fns:
-            ## firstk
-            test_sent = []
-            student.score = fn
-            test_sent, target_sent, text_sent = get_sentences_by_method(pool, student, test_sent)
-            predict = exp_clf.predict(test_sent)
-            # print "METHOD: %s" % fn.__name__
-            mname = fn.__name__
-            if False:
-                print_document(text_sent,  offset, method_name=mname, top=500, truth=pool.target, prediction=predict) #, org_doc=pool.text)
-            offset += 500
-            accu = metrics.accuracy_score(pool.target, predict)
-            print "Accu %s \t%s" % (student.score.__name__, accu)
-
-
-        test_sent, target_sent = score_top_feat(pool, sent_detector, exp_clf, vct)
-        predict = exp_clf.predict(test_sent)
-
-        accu = metrics.accuracy_score(pool.target, predict)
-        print "Accu %s \t%s" % (score_top_feat.__name__, accu)
-
 
     print("Elapsed time %.3f" % (time.time() - t0))
 
-
-def neutral_label(label):
-    if label is None:
-        return 0
-    else:
-        return 1
 
 def print_document(text_sent, offset, method_name='', top=500, **kwargs):
     #text_sent, truth=pool.target, prediction=predict, org_doc=pool.text):
@@ -403,16 +324,7 @@ def print_document(text_sent, offset, method_name='', top=500, **kwargs):
             for w in kwargs.values():
                 print w[i], "\t",
         print text_sent[i].encode('latin1').replace("\n"," ")
-        # print "-"*60
 
-def format_query(query_labels):
-    string = ""
-    for l, q in query_labels:
-        string = string + "{0}".format(l)
-        for qi in q:
-            string = string + "\t{0:.2f} ".format(qi)
-        string = string + "\n"
-    return string
 
 
 if __name__ == '__main__':

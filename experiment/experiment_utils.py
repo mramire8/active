@@ -6,6 +6,7 @@ from collections import defaultdict
 import numpy as np
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
+from learner.adaptive_lr import LogisticRegressionAdaptive
 import matplotlib.pyplot as plt
 
 from strategy import base_models
@@ -58,13 +59,23 @@ def set_expert_model():
     pass
 
 
-def set_classifier(cl_name):
+def set_classifier(cl_name, **kwargs):
     clf = None
     if cl_name in "mnb":
         alpha = 1
+        if 'parameter' in kwargs:
+            alpha = kwargs['parameter']
         clf = MultinomialNB(alpha=alpha)
-    elif cl_name in "lr":
-        clf = LogisticRegression(penalty="l1", C=1)
+    elif cl_name == "lr":
+        c = 1
+        if 'parameter' in kwargs:
+            c = kwargs['parameter']
+        clf = LogisticRegression(penalty="l1", C=c)
+    elif cl_name == "lradapt":
+        c = 1
+        if 'parameter' in kwargs:
+            c = kwargs['parameter']
+        clf = LogisticRegressionAdaptive(penalty="l1", C=c)
     else:
         raise ValueError("We need a classifier name for the student [lr|mnb]")
     return clf
@@ -150,10 +161,10 @@ def plot_performance(x, y, title, xaxis, yaxis):
     plt.savefig('{1}-{0}.pdf'.format(yaxis, title))
     # plt.show()
 
-def oracle_accuracy(oracle, file_name="out"):
+def oracle_accuracy(oracle, file_name="out", cm=None, num_trials=5):
     # print the cost x-axis
     print
-    print "Number of x points %s" % len(oracle.keys())
+    print "Oracle Accuracy over %s" % len(oracle.keys())
 
     # print the accuracies
 
@@ -164,9 +175,35 @@ def oracle_accuracy(oracle, file_name="out"):
     print
     print "Cost\tAccu_Mean\tAccu_Std"
     for a, b, c, d in zip(x, y, z, w):
-        print "%0.3f\t%0.3f\t%0.3f\t%d" % (a, b, c, d)
-    plot_performance(x, y, "Oracle Accuracy Performance " + file_name, "Cost", "Oracle Accuracy")
+        print "%0.3f\t%0.3f\t%0.3f\t%d" % (a, 1.*b/a, c, d)
+    # plot_performance(x, y, "Oracle Accuracy Performance " + file_name, "Cost", "Oracle Accuracy")
     print_file(x, y, z, "{}-accuracy.txt".format("oracle-"+file_name))
+
+    print "\nCost\tAccu_t1\tAccu_t2\tAccu_t3\tAccu_t4\tAccu_t5"
+    trials = [oracle[xi] for xi in x]
+    for xi, t in zip(x,trials):
+        print "%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f" % (xi,t[0],t[1],t[2],t[3],t[4])
+    # plot_performance(x, y, "Oracle Accuracy Performance " + file_name, "Cost", "Oracle Accuracy")
+    print_file2(x, trials, "{}-accuracy.txt".format("oracle-bytrial"+file_name))
+
+    if cm is not None:
+        print "\nORACLE CONFUSION MATRIX AVERAGE"
+        print "\nCost\tT0\tF1\tF0\tT1\t"
+        trials = [cm[xi] for xi in x]
+        all_t = []
+        for xi, t in zip(x, trials):
+            # print "%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f" % (xi,t[0],t[1],t[2],t[3],t[4])
+            sum = np.array(t[0], dtype=np.float)
+            for ti in t[1:]:
+                sum = sum + np.array(ti)
+            all_t.append("%0.1f \t" % xi + "\t".join(["{0[0]} {0[1]} {1[0]} {1[1]}".format(v[0],v[1]) for v in t])) ## all trials
+            ave = sum/num_trials
+            # print ave
+            print "%0.3f\t%s" % (xi,"{0[0][0]}\t{0[0][1]}\t{0[1][0]}\t{0[1][1]}".format(ave))
+            #["{0[0]} {0[1]} {1[0]} {1[1]}".format(*v) for v in t]
+        print_file_cm(x, cm,"{}-cm-accuracy.txt".format("oracle-"+file_name))
+        print "\nAll trials of confusion matrix"
+        print "\n".join(all_t)
 
 
 def print_extrapolated_results(accuracies, aucs, file_name="out"):
@@ -208,6 +245,31 @@ def print_file(x, y, z, file_name):
     f.close()
 
 
+def print_file2(x, trial, file_name):
+    f = open(file_name, "w")
+    f.write("Cost\tAccu_t1\tAccu_t2\tAccu_t3\tAccu_t4\tAccu_t5\n")
+    for a, t in zip(x, trial):
+        # print a, t
+        f.write("{0:.3f}\t{1:.3f}\t{2:.3f}\t{3:.3f}\t{4:.3f}\t{5:.3f}\n".format(a,*t))
+    f.close()
+
+
+def print_file_cm(x, cm, file_name, num_trials=5.0):
+    f = open(file_name, "w")
+    f.write("Cost\tT0\tF1\tF0\tT1\n")
+    trials = [cm[xi] for xi in x]
+
+    for xi, t in zip(x, trials):
+        sum = np.array(t[0], dtype=np.float)
+        for ti in t[1:]:
+            sum = sum + np.array(ti)
+        ave = sum/num_trials
+        # print ave
+        f.write("%0.3f\t%s\n" % (xi,"{0[0][0]}\t{0[0][1]}\t{0[1][0]}\t{0[1][1]}".format(ave)))
+    f.close()
+
+
+
 def format_list(list):
     string = ""
     for r in list:
@@ -227,18 +289,67 @@ def print_features(coef, names):
     print "*" * 50
 
 
-def split_data_sentences(data, sent_detector, vct):
+def split_data_sentences(data, sent_detector, vct, limit=0):
     sent_train = []
     labels = []
     tokenizer = vct.build_tokenizer()
-
-    print ("Spliting into sentences...")
+    dump = []
+    print ("Spliting into sentences... Limit:", limit)
     ## Convert the documents into sentences: train
     for t, sentences in zip(data.target, sent_detector.batch_tokenize(data.data)):
-        sents = [s for s in sentences if len(tokenizer(s)) > 1]
+        # sents = [s for s in sentences if len(s) > 1]
+
+        if limit is None:
+            sents = [s for s in sentences if len(tokenizer(s)) > 1]
+        elif limit > 0:
+            sents = [s for s in sentences if len(s.strip()) > limit]
+        elif limit == 0:
+            sents = [s for s in sentences]
+        dump2 = [s for s in sentences if len(s.strip()) <= limit]
+        dump.extend(dump2)
         sent_train.extend(sents)  # at the sentences separately as individual documents
         labels.extend([t] * len(sents))  # Give the label of the document to all its sentences
-    return labels, sent_train
+
+    return labels, sent_train #, dump
+
+
+def split_data_first1sentences(data, sent_detector, vct, limit=0):
+    '''
+    This function is for testing purposes only, do not use in a model
+    :param data:
+    :param sent_detector:
+    :param vct:
+    :param limit:
+    :return:
+    '''
+    sent_train = []
+    labels = []
+    dumped_labels = []
+    tokenizer = vct.build_tokenizer()
+    dump = []
+    f1 = []
+    print ("Spliting into sentences... Limit:", limit)
+    ## Convert the documents into sentences: train
+    for t, sentences in zip(data.target, sent_detector.batch_tokenize(data.data)):
+        # sents = [s for s in sentences if len(s) > 1]
+        f1.extend([sentences[0]])
+        if limit is None:
+            sents = [s for s in sentences if len(tokenizer(s)) > 1]
+        elif limit > 0:
+            sents = [s for s in sentences if len(s.strip()) > limit]
+        elif limit == 0:
+            sents = [s for s in sentences]
+        dump2 = [s for s in sentences if len(s.strip()) <= limit]
+        dump.extend(dump2)
+        dumped_labels.extend([t] * len(dump2))
+        sent_train.extend(sents)  # at the sentences separately as individual documents
+        labels.extend([t] * len(sents))  # Give the label of the document to all its sentences
+        # dump.extend(dp)
+
+    # print "Removing %s sentences" % len(dump)
+    # print "\n".join(dump)
+
+    return labels, sent_train, dump, dumped_labels, f1
 
 
 def split_into_sentences(data, sent_detector, vct):

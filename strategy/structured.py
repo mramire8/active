@@ -265,13 +265,15 @@ class AALStructuredReading(AnytimeLearner):
         self.sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
         self._kvalues = [1]
         self.sentence_separator = ' ... '
-        self.sent_model = None
+        self.sent_model = copy.copy(model)
+        self.base_neutral = copy.copy(model)  ## we will use same for student and sentence model
         self.cheating = False
         self.counter = 0
         self.curret_doc = None
         self.score = self.score_base
         self.fn_utility = self.utility_base
         self.rnd_vals = RandomState(4321)
+        self.limit = 0
 
     def pick_next(self, pool=None, step_size=1):
 
@@ -357,7 +359,7 @@ class AALStructuredReading(AnytimeLearner):
 
     def score_fk(self, sentence):
         self.counter += 1
-        if self.counter <= self._kvalues[0]:
+        if self.counter == 1:
             return 1.0
         else:
             return 0.0
@@ -369,7 +371,12 @@ class AALStructuredReading(AnytimeLearner):
             text = [text]
         sents = self.sent_detector.batch_tokenize(text)
 
-        ### do the matrix??
+        if self.limit == 0:
+            pass
+        elif self.limit > 0:
+            sents = [s for s in sents[0] if len(s.strip()) > self.limit]
+            sents = [sents]  # trick to use the vectorizer properly
+        ### do the matrix
         sents_bow = self.vcn.transform(sents[0])
 
         return sents_bow, sents[0]
@@ -431,7 +438,7 @@ class AALStructuredReading(AnytimeLearner):
 
     def __str__(self):
         string = "{0}(seed={seed}".format(self.__class__.__name__, seed=self.seed)
-        string += ", utility={}, score={})".format(self.fn_utility.__name__, self.score.__name__)
+        string += ", clf = {}, utility={}, score={})".format(self.model, self.fn_utility.__name__, self.score.__name__)
         return string
 
     def __repr__(self):
@@ -781,43 +788,81 @@ class AALTFERandomThenSR(AALUtilityThenStructuredReading):
         self.first_k = fk
 
     def pick_random(self, pool=None, step_size=1):
-        ## version 1
-        # list_pool = sorted(list(pool.remaining))
-        # indices = self.rnd_vals.permutation(len(pool.remaining))
-        # remaining = [list_pool[index] for index in indices[:self.subpool]]
-        # chosen_x = remaining[:int(step_size)]  #index and k of chosen
         ## version 2:
-        chosen_x = pool.remaining[:step_size]
+        chosen_x = pool.remaining[pool.offset:(pool.offset+step_size)]
+
         #After utility, pick the best sentence of each document
+
         chosen = self.pick_next_sentence(chosen_x, pool=pool)
-        # print "after:", [x[0] for x in chosen]
+
         return chosen
 
     def pick_next(self, pool=None, step_size=1):
         # return all order by utility of x
         chosen = self.pick_random(pool=pool, step_size=self.subpool)
+        final = []
+        for x,y in chosen[:step_size]:
+            final.append([x,y[0]])
+        return final
 
-        pred_class = []
-        chosen_0 = []
-        chosen_1 = []
-        for index_x, sent_x in chosen:
-            pc = self.sent_model.predict(sent_x[0])
-            pred_class.append(pc)
-            if pc == 0:
-                chosen_0.append([index_x, sent_x[0]])
-            else:
-                chosen_1.append([index_x, sent_x[0]])
+    def x_utility_cs(self, instance, instance_text):
+        '''
+        The utility of the sentences inside a document with class sensitive features
+        :param instance:
+        :param instance_text:
+        :return:
+        '''
 
-        half = int(step_size / 2)
-        chosen = chosen_0[:half]
-        chosen.extend(chosen_1[:half])
-        if len(chosen) < step_size:
-            miss = step_size - len(chosen)
-            if len(chosen_0) < step_size / 2:
-                chosen.extend(chosen_1[half: (half + miss)])
-            elif len(chosen_1) < step_size / 2:
-                chosen.extend(chosen_0[half: (half + miss)])
-            else:
-                raise Exception("Oops, we cannot get the next batch. We ran out of instances.")
+        sentences_indoc, sent_text = self.getk(instance_text)  #get subinstances
 
-        return chosen
+        self.counter = 0
+        pred_doc = self.model.predict(instance)
+        pred_probl = self.sent_model.predict_proba(sentences_indoc)
+        pred_y = self.sent_model.classes_[np.argmax(pred_probl, axis=1)]
+
+        # print pred_doc
+
+        # utility = np.array([self.score(xik) for xik in sentences_indoc])  # get the senteces score
+        order = np.argsort(pred_probl[:,pred_doc[0]], axis=0)[::-1]  ## descending order, top scores
+
+        best_sent = [sentences_indoc[i] for i in order]
+
+        # if len(best_sent) > 0:
+        return best_sent[:self.first_k]
+        # else:
+        #     return [sentences_indoc[i] for i in order[:self.first_k]]
+
+    def x_utility_maj(self, instance, instance_text):
+        '''
+        The utility of the sentences inside a document with class sensitive features
+        :param instance:
+        :param instance_text:
+        :return:
+        '''
+
+        sentences_indoc, sent_text = self.getk(instance_text)  #get subinstances
+
+        self.counter = 0
+        # pred_doc = self.model.predict(instance)
+        pred_probl = self.sent_model.predict_proba(sentences_indoc)
+        pred_y = self.sent_model.classes_[np.argmax(pred_probl, axis=1)]
+        pred_doc = np.round(1.* pred_y.sum()/ len(pred_y)) ## majority vote
+
+        # utility = np.array([self.score(xik) for xik in sentences_indoc])  # get the senteces score
+        order = np.argsort(pred_probl[:,pred_doc], axis=0)[::-1]  ## descending order, top scores
+
+        best_sent = [sentences_indoc[i] for i in order]
+
+        # if len(best_sent) > 0:
+        return best_sent[:self.first_k]
+
+
+    def set_x_utility(self, x_util_fn):
+        self.x_utility = x_util_fn
+
+    def class_sensitive_utility(self):
+        self.set_x_utility(self.x_utility_cs)
+
+    def majority_vote_utility(self):
+        self.set_x_utility(self.x_utility_maj)
+

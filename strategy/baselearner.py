@@ -17,9 +17,7 @@ class BaseLearner(object):
         self.accuracy_model = accuracy_model
         self.budget = budget
         self.seed = seed
-        self.randgen = np.random.RandomState()
-        self.randgen.seed(seed)
-        random.seed(4321)
+        self.randgen = np.random.RandomState(seed)
         self.subpool = subpool
 
     def pick_next(self, pool=None, k=1):

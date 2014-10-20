@@ -31,7 +31,7 @@ else:
     AVI_HOME  = '/Users/maru/Dataset/aviation/data'
 
 
-def keep_header_subject(text):
+def keep_header_subject(text, keep_subject=False):
     """
     Given text in "news" format, strip the headers, by removing everything
     before the first blank line.
@@ -39,9 +39,10 @@ def keep_header_subject(text):
     _before, _blankline, after = text.partition('\n\n')
 
     sub = [l for l in _before.split("\n") if "Subject:" in l]
-
-    final = sub[0] + "\n" + after
-
+    if keep_subject:
+        final = sub[0] + "\n" + after
+    else:
+        final = after
     return final
 
 
@@ -49,12 +50,12 @@ def load_20newsgroups(categories=None, vectorizer=CountVectorizer(min_df=5, max_
                       fix_k=None, raw=False):
     print "Loading 20 newsgroups dataset for categories:", categories
     data = bunch.Bunch()
-    data.train = fetch_20newsgroups(subset='train', categories=categories, remove=('footers', 'quotes'),
+    data.train = fetch_20newsgroups(subset='train', categories=categories, remove=('headers','footers', 'quotes'),
                                     shuffle=True, random_state=42)
 
     data.train.data = [keep_header_subject(text) for text in data.train.data]
 
-    data.test = fetch_20newsgroups(subset='test', categories=categories, remove=('footers', 'quotes'),
+    data.test = fetch_20newsgroups(subset='test', categories=categories, remove=('headers','footers', 'quotes'),
                                    shuffle=True, random_state=42)
 
     data.test.data = [keep_header_subject(text) for text in data.test.data]
@@ -133,7 +134,7 @@ def load_aviation(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorize
     # train_x, test_x, train_y, test_y = train_test_split(data.data, data.target, test_size=0.25,
     #     random_state=rnd)
 
-    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     for train_ind, test_ind in indices:
 
         data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
@@ -309,18 +310,18 @@ def load_from_file(train, categories, fixk, min_size, vct, raw=True):
         fixk_file = open(fixk_saved, "rb")
         data = pickle.load(fixk_file)
         fixk_file.close()
-        vectorizer = open("{0}vectorizer.p".format(train), "rb")
-        vct = pickle.load(vectorizer)
-        vectorizer.close()
+        # vectorizer = open("{0}vectorizer.p".format(train), "rb")
+        # vct = pickle.load(vectorizer)
+        # vectorizer.close()
     except (IOError, ValueError):
         print "Loading from scratch..."
         data = load_dataset(train, fixk, categories[0], vct, min_size, percent=.5)
         fixk_file = open(fixk_saved, "wb")
         pickle.dump(data, fixk_file)
         fixk_file.close()
-        vectorizer = open("{0}vectorizer.p".format(train), "wb")
-        pickle.dump(vct, vectorizer)
-        vectorizer.close()
+        # vectorizer = open("{0}vectorizer.p".format(train), "wb")
+        # pickle.dump(vct, vectorizer)
+        # vectorizer.close()
 
     return data, vct
 
@@ -341,7 +342,7 @@ def load_bloggender(path, subset="all", shuffle=True, rnd=2356, vct=CountVectori
     data.target=np.array(labels)
 
 
-    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     for train_ind, test_ind in indices:
 
         data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
@@ -448,7 +449,7 @@ def load_evergreen(path, subset="all", shuffle=True, rnd=2356, vct=CountVectoriz
     data.target=np.array(labels)
 
 
-    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     for train_ind, test_ind in indices:
 
         data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
@@ -482,7 +483,7 @@ def load_gmo(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), 
     data = bunch.Bunch()
     data.data = parts
     data.target = labels
-    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     for train_ind, test_ind in indices:
 
         data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
@@ -541,7 +542,7 @@ def load_blogpan(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer
     # train_x, test_x, train_y, test_y = train_test_split(data.data, data.target, test_size=0.25,
     #     random_state=rnd)
 
-    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent,  random_state=rnd)
     for train_ind, test_ind in indices:
 
         data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
@@ -771,7 +772,7 @@ def load_webkb(path, categories=None, subset="all", shuffle=True, rnd=2356, vct=
         data_lst = data_lst[indices]
         data.data = data_lst.tolist()
 
-    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent,  random_state=rnd)
     for train_ind, test_ind in indices:
 
         data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind],
@@ -794,7 +795,7 @@ def split_data(data, splits=2.0, rnd=987654321):
     :return: two bunches with the split
     """
     percent = 1.0 / splits
-    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, indices=True, random_state=rnd)
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     part1 = bunch.Bunch()
     part2 = bunch.Bunch()
     for train_ind, test_ind in indices:

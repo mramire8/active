@@ -6,6 +6,7 @@ from numpy.random import RandomState
 from randomsampling import *
 import random
 
+
 class AALStructuredFixk(AnytimeLearner):
     def __init__(self, model=None, accuracy_model=None, budget=None, seed=None, vcn=None, subpool=None,
                  cost_model=None):
@@ -31,13 +32,13 @@ class AALStructuredFixk(AnytimeLearner):
         unc = 1
         utility = np.array([[self.score(xik, k) * unc, k] for k, xik in self.getk(instance_text)])
 
-        order = np.argsort(utility[:, 0], axis=0)[::-1]  ## descending order
+        order = np.argsort(utility[:, 0], axis=0)[::-1]  # # descending order
 
         utility_sorted = utility[order, :]
         # print format_list(utility_sorted)
         if show_utilitly:
             print "\t{0:.5f}".format(unc),
-        return utility_sorted[0, 0], utility_sorted[0, 1], unc  ## return the max
+        return utility_sorted[0, 0], utility_sorted[0, 1], unc  # # return the max
 
 
     def getk(self, doc_text):
@@ -47,7 +48,7 @@ class AALStructuredFixk(AnytimeLearner):
         :return: first k sentences of the document
         '''
         sents = self.sent_detector.tokenize(doc_text)  # split in sentences
-        #analize = self.vcn.build_tokenizer()
+        # analize = self.vcn.build_tokenizer()
 
         qk = []
         lens = []
@@ -65,7 +66,7 @@ class AALStructuredFixk(AnytimeLearner):
         :return: first k sentences of the document
         '''
         sents = self.sent_detector.tokenize(doc_text)  # split in sentences
-        #analize = self.vcn.build_tokenizer()
+        # analize = self.vcn.build_tokenizer()
 
         qk = []
         lens = []
@@ -83,7 +84,7 @@ class AALStructuredFixk(AnytimeLearner):
         :param k:
         :return:
         '''
-        ## change the text to use the vectorizer
+        # # change the text to use the vectorizer
 
         xik = self.vcn.transform([instance_k])
         # neu = self.neutral_model.predict_proba(xik) if self.neutral_model is not None else [1]
@@ -123,7 +124,7 @@ class AALStructured(AALStructuredFixk):
 
     # def score(self, instance_k, k):
     # '''
-    #     Compute the score of the first k sentences of the document
+    # Compute the score of the first k sentences of the document
     #     :param instance_k:
     #     :param k:
     #     :return:
@@ -253,7 +254,7 @@ class AALStructured(AALStructuredFixk):
 
 
 # #######################################################################################################################
-## ANYTIME ACTIVE LEARNING: STRUCTURED UNCERTAINTY READING
+# # ANYTIME ACTIVE LEARNING: STRUCTURED UNCERTAINTY READING
 ########################################################################################################################
 
 class AALStructuredReading(AnytimeLearner):
@@ -706,7 +707,6 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
 
 
 class AALUtilityThenSR_Firstk(AALUtilityThenStructuredReading):
-
     def __init__(self, model=None, accuracy_model=None, budget=None, seed=None, vcn=None, subpool=None,
                  cost_model=None, fk=1):
         super(AALUtilityThenSR_Firstk, self).__init__(model=model, accuracy_model=accuracy_model, budget=budget,
@@ -781,15 +781,15 @@ class AALTFERandomThenSR(AALUtilityThenStructuredReading):
     def __init__(self, model=None, accuracy_model=None, budget=None, seed=None, vcn=None, subpool=None,
                  cost_model=None, fk=1):
         super(AALTFERandomThenSR, self).__init__(model=model, accuracy_model=accuracy_model, budget=budget,
-                                                      seed=seed,
-                                                      cost_model=cost_model, vcn=vcn, subpool=subpool)
+                                                 seed=seed,
+                                                 cost_model=cost_model, vcn=vcn, subpool=subpool)
         self.score = self.score_max  # sentence score
         self.fn_utility = self.utility_unc  # document score
         self.first_k = fk
 
     def pick_random(self, pool=None, step_size=1):
         ## version 2:
-        chosen_x = pool.remaining[pool.offset:(pool.offset+step_size)]
+        chosen_x = pool.remaining[pool.offset:(pool.offset + step_size)]
 
         #After utility, pick the best sentence of each document
 
@@ -801,17 +801,17 @@ class AALTFERandomThenSR(AALUtilityThenStructuredReading):
         # return all order by utility of x
         chosen = self.pick_random(pool=pool, step_size=self.subpool)
         final = []
-        for x,y in chosen[:step_size]:
-            final.append([x,y[0]])
+        for x, y in chosen[:step_size]:
+            final.append([x, y[0]])
         return final
 
     def x_utility_cs(self, instance, instance_text):
-        '''
+        """
         The utility of the sentences inside a document with class sensitive features
         :param instance:
         :param instance_text:
         :return:
-        '''
+        """
 
         sentences_indoc, sent_text = self.getk(instance_text)  #get subinstances
 
@@ -820,36 +820,31 @@ class AALTFERandomThenSR(AALUtilityThenStructuredReading):
         pred_probl = self.sent_model.predict_proba(sentences_indoc)
         pred_y = self.sent_model.classes_[np.argmax(pred_probl, axis=1)]
 
-        # print pred_doc
-
-        # utility = np.array([self.score(xik) for xik in sentences_indoc])  # get the senteces score
-        order = np.argsort(pred_probl[:,pred_doc[0]], axis=0)[::-1]  ## descending order, top scores
+        order = np.argsort(pred_probl[:, pred_doc[0]], axis=0)[::-1]  # descending order, top scores
 
         best_sent = [sentences_indoc[i] for i in order]
 
-        # if len(best_sent) > 0:
         return best_sent[:self.first_k]
-        # else:
-        #     return [sentences_indoc[i] for i in order[:self.first_k]]
 
     def x_utility_maj(self, instance, instance_text):
-        '''
-        The utility of the sentences inside a document with class sensitive features
+        """
+        The utility of the sentences inside a document with class sensitive features by majority vote of the sentence
+        classifier.
         :param instance:
         :param instance_text:
         :return:
-        '''
+        """
 
-        sentences_indoc, sent_text = self.getk(instance_text)  #get subinstances
+        sentences_indoc, sent_text = self.getk(instance_text)  # get subinstances
 
         self.counter = 0
         # pred_doc = self.model.predict(instance)
         pred_probl = self.sent_model.predict_proba(sentences_indoc)
         pred_y = self.sent_model.classes_[np.argmax(pred_probl, axis=1)]
-        pred_doc = np.round(1.* pred_y.sum()/ len(pred_y)) ## majority vote
+        pred_doc = np.round(1. * pred_y.sum() / len(pred_y))  ## majority vote
 
         # utility = np.array([self.score(xik) for xik in sentences_indoc])  # get the senteces score
-        order = np.argsort(pred_probl[:,pred_doc], axis=0)[::-1]  ## descending order, top scores
+        order = np.argsort(pred_probl[:, pred_doc], axis=0)[::-1]  ## descending order, top scores
 
         best_sent = [sentences_indoc[i] for i in order]
 

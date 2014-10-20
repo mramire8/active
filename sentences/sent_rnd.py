@@ -550,23 +550,14 @@ def main():
             ## add data recent acquired to train
             if useful_answers.shape[0] != 0:
                 train_indices.extend(useful_answers[:, 0])
-                # print train_indices[50:]
+
                 # add labels to training
                 train_x = pool.data[train_indices]  # # train with all the words
 
                 # update labels with the expert labels
                 train_y.extend(useful_answers[:, 1])
 
-            # if args.student == "rnd_srre" and iteration > 0:
-            #     neu_x, neu_y, neutral_data = update_sentence_threhold(neutral_data, neu_x, neu_y, labels, query_index, pool, vct, student, threshold=.6)
-            #     neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct)
-            #     # print len(neu_y)
-            #     # neu_x, neu_y, neutral_data = update_sentence_query(neutral_data, neu_x, neu_y, query, labels)
-            #     # print len(neu_y)
-            # else:
-            #     neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct)
-
-            neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct)
+            neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct)  # update sentence student classifier data
 
             if neu_y.shape[0] != neu_x.shape[0]:
                 raise Exception("Training data corrupted!")

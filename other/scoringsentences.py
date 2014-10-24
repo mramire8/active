@@ -213,19 +213,19 @@ def get_data(clf, train, cats, fixk, min_size, vct, raw):
     #### EXPERT CLASSIFIER: ORACLE
     print("Training Oracle expert")
 
-    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=1)
-
+    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=2)
+    print len(sent_train)
     expert_data.oracle.train.data = sent_train
     expert_data.oracle.train.target = np.array(labels)
     expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
-
+    print expert_data.oracle.train.bow.shape
     # exp_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
     exp_clf = copy.copy(clf)
     exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
 
     #### EXPERT CLASSIFIER: SENTENCES
     print("Training sentence expert")
-    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=1)
+    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=2)
 
     expert_data.sentence.train.data = sent_train
     expert_data.sentence.train.target = np.array(labels)

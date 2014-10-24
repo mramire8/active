@@ -35,7 +35,7 @@ apfk = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 apfk.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="webkb",
                 help='training data (libSVM format)')
 
 apfk.add_argument('--seed',
@@ -85,21 +85,21 @@ if (__name__ == '__main__'):
     ## configuration settings
 
     test_case = "sent-sent"   # sent-sent, sent-doc, doc-doc, doc-sent
-    lim = 0                # none: original method, 1:one character, 0:no limit
-    classifier = 'lr'
+    lim = 2                # none: original method, 1:one character, 0:no limit
+    classifier = 'lradapt'
 
     if classifier == "mnb":
         C_values = [1]
     elif classifier == "lr":
         C_values = [2e-3, 2e-2, 2e-1, 2e0, 2e1, 2e2, 2e3]
         # C_values = [1, 2, 3, 4, 5]
-        C_values = [1, 2000]
+        C_values = [1, 10]
     else:
         C_values = [1]
 
     sizes = range(50, 1000, 100)
-    sizes = range(50, 2000, 100)
-    sizes = range(50, 20000, 1000)
+    # sizes = range(50, 2000, 100)
+    sizes = range(50, 5000, 250)
 
     t0 = time()
     np.set_printoptions(precision=4)
@@ -111,6 +111,7 @@ if (__name__ == '__main__'):
                   ['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware'],
                   ['rec.sport.baseball', 'sci.crypt']]
     categories = [['student','faculty']]
+    categories = [['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware']]
     reg = args.reg
     print (reg)
 
@@ -144,7 +145,7 @@ if (__name__ == '__main__'):
     data.test.bow = vct.transform(data.test.data)
 
     print("Original data size: ", data.train.bow.shape)
-
+    print("Original distribution: ", data.train.target.sum())
     ## if I want sentences in the data instead of documents
     sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
     print("Type of data:", test_case)
@@ -242,7 +243,7 @@ if (__name__ == '__main__'):
 
         show_train = False
         plt.grid(color='.75', which='major', axis='y', linestyle='--', linewidth=1)
-        plt.title("Data:" + args.train)
+        plt.title("Data:" + args.train + " on " + test_case)
         plt.xlabel("Number of Labels")
         plt.ylabel('accuracy'.title())
         col = brewer2mpl.get_map('Set1', 'qualitative', 7).mpl_colors
@@ -250,7 +251,19 @@ if (__name__ == '__main__'):
 
         random_state = np.random.RandomState(5612)
         # kcv = StratifiedKFold(y=data.train.target, n_folds=5, random_state=random_state,shuffle=True)
-        kcv = KFold(len(data.train.target), n_folds=5, random_state=random_state,shuffle=True)
+
+
+        indices = np.arange(data.train.target.shape[0])
+        random_state.shuffle(indices)
+
+        data.train.target = data.train.target[indices]
+        # Use an object array to shuffle: avoids memory copy
+        data_lst = np.array(data.train.data, dtype=object)
+        data_lst = data_lst[indices]
+        data.train.data = data_lst.tolist()
+        data.train.bow = data.train.bow[indices]
+
+        kcv = KFold(len(data.train.target), n_folds=3, random_state=random_state,shuffle=True)
 
         # print ("Vectorizer:", vct)
 

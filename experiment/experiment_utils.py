@@ -222,7 +222,7 @@ def print_extrapolated_results(accuracies, aucs, file_name="out"):
     for a, b, c, d in zip(x, y, z, w):
         print "%0.3f\t%0.3f\t%0.3f\t%d" % (a, b, c, d)
 
-    plot_performance(x, y, "Accuracy Performance " + file_name, "Cost", "Accuracy")
+    # plot_performance(x, y, "Accuracy Performance " + file_name, "Cost", "Accuracy")
     print_file(x, y, z, "{}-accuracy.txt".format(file_name))
 
     x = sorted(aucs.keys())
@@ -233,7 +233,7 @@ def print_extrapolated_results(accuracies, aucs, file_name="out"):
     for a, b, c in zip(x, y, z):
         print "%0.3f\t%0.3f\t%0.3f" % (a, b, c)
 
-    plot_performance(x, y, "AUC Performance " + file_name, "Cost", "AUC")
+    # plot_performance(x, y, "AUC Performance " + file_name, "Cost", "AUC")
     print_file(x, y, z, "{}-auc.txt".format(file_name))
 
 

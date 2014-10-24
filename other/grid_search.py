@@ -33,7 +33,7 @@ apfk = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 apfk.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="20news",
                 help='training data (libSVM format)')
 
 apfk.add_argument('--seed',
@@ -144,13 +144,13 @@ if (__name__ == '__main__'):
 
     from experiment.experiment_utils import split_data_sentences
     sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
-    labels, sent_train = split_data_sentences(data.train, sent_detector, vct)
+    labels, sent_train = split_data_sentences(data.train, sent_detector, vct, limit=2)
     #
     # X = sent_train
     y = np.array(labels)
     X = vct.transform(sent_train)
 
-    labels, sent_train = split_data_sentences(data.test, sent_detector,vct)
+    labels, sent_train = split_data_sentences(data.test, sent_detector,vct, limit=2)
 
     data.test.data = sent_train
     data.test.target = np.array(labels)
@@ -177,7 +177,7 @@ if (__name__ == '__main__'):
             print(len(y_train[:s]))
             clf_new = linear_model.LogisticRegression(penalty='l1')
             clf = GridSearchCV(clf_new, tuned_parameters, cv=5, scoring=measure, n_jobs=20)
-            clf.fit(X_train[:s], y_train[:s])
+            clf.fit(X_train, y_train)
 
             print("Best parameters set found on development set:")
             print(clf.best_estimator_)

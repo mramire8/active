@@ -777,10 +777,10 @@ class AALTFEUtilityThenSR_Max(AALUtilityThenStructuredReading):
         return chosen
 
 
-class AALTFERandomThenSR(AALUtilityThenStructuredReading):
+class AALRandomThenSR(AALUtilityThenStructuredReading):
     def __init__(self, model=None, accuracy_model=None, budget=None, seed=None, vcn=None, subpool=None,
                  cost_model=None, fk=1):
-        super(AALTFERandomThenSR, self).__init__(model=model, accuracy_model=accuracy_model, budget=budget,
+        super(AALRandomThenSR, self).__init__(model=model, accuracy_model=accuracy_model, budget=budget,
                                                  seed=seed,
                                                  cost_model=cost_model, vcn=vcn, subpool=subpool)
         self.score = self.score_max  # sentence score

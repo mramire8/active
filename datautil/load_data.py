@@ -137,8 +137,10 @@ def load_aviation(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorize
     indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     for train_ind, test_ind in indices:
 
-        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
-                              test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind]))
+        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind],
+                                             target_names=data.target_names),
+                              test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind],
+                                             target_names=data.target_names))
     # if shuffle:
     #     random_state = np.random.RandomState(rnd)
     #     indices = np.arange(data.train.target.shape[0])
@@ -154,7 +156,6 @@ def load_aviation(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorize
         data = process_data(data, fix_k, min_size, vct)
 
     return data
-
 
 
 def load_dummy(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False):
@@ -242,32 +243,36 @@ def load_dataset(name, fixk, categories, vct, min_size, raw=False, percent=.5):
         data = load_imdb(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
                          fix_k=fixk, raw=raw)  # should brind data as is
     elif "aviation" in name:
-        # raise Exception("We are not ready for that data yet")
+        ########## sraa dataset ######
         data = load_aviation(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
                          fix_k=fixk, raw=raw, percent=percent)
     elif "20news" in name:
         ########## 20 news groups ######
         data = load_20newsgroups(categories=categories, vectorizer=vct, min_size=min_size,
-                                 fix_k=fixk, raw=raw)  # for testing purposes
+                                 fix_k=fixk, raw=raw)
     elif "bgender" in name:
         ########## 20 news groups ######
         data = load_bloggender(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
-                         fix_k=fixk, raw=raw, percent=percent)  # for testing purposes
+                         fix_k=fixk, raw=raw, percent=percent)
     elif "gmo" in name:
-        ########## 20 news groups ######
+        ########## article pro-con gmo ######
         data = load_gmo(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
-                         fix_k=fixk, raw=raw, percent=percent)  # for testing purposes
+                         fix_k=fixk, raw=raw, percent=percent)
     elif "evergreen" in name:
-        ########## 20 news groups ######
+        ########## evergreen content blogs  ######
         data = load_evergreen(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
-                         fix_k=fixk, raw=raw, percent=percent)  # for testing purposes
+                         fix_k=fixk, raw=raw, percent=percent)
     elif "pan" in name:
-        ########## 20 news groups ######
+        ########## author gender classification from blogs ######
         data = load_blogpan(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
-                         fix_k=fixk, raw=raw, percent=percent)  # for testing purposes
+                         fix_k=fixk, raw=raw, percent=percent)
     elif "webkb" in name:
         # raise Exception("We are not ready for that data yet")
         data = load_webkb(name, categories=categories, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
+                         fix_k=fixk, raw=raw, percent=percent)
+    elif "biocreative" in name:
+        # raise Exception("We are not ready for that data yet")
+        data = load_biocreative(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
                          fix_k=fixk, raw=raw, percent=percent)
     elif "dummy" in name:
         ########## DUMMY DATA###########
@@ -325,9 +330,10 @@ def load_from_file(train, categories, fixk, min_size, vct, raw=True):
 
     return data, vct
 
-import csv
+
 BLOGGEN_HOME = "C:/Users/mramire8/Documents/Datasets/textclassification/raw data/author-profiling-gender/gender/blog-gender-dataset.tsv"
 def load_bloggender(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False, percent=.5):
+    import csv
     docs = []
     labels = []
     clases = ['F', 'M']
@@ -511,7 +517,7 @@ def clean_xml_pan(xml_text, parser=None):
 
 def load_blogpan(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False, percent=.5):
     """
-    load text files from Aviation-auto dataset from folders to memory. It will return a 25-75 percent train test split
+    load text files from author gender profiling dataset from folders to memory.
     :param path: path of the root directory of the data
     :param subset: what data will be loaded, train or test or all
     :param shuffle:
@@ -609,34 +615,25 @@ def load_biocreative(path, subset="all", shuffle=True, rnd=2356, vct=CountVector
     #              target_names=target_names,
     #              target=target,
     #              DESCR=description)
-    pass
+    raise Exception("We are not ready for that data yet")
 
 
 WEBKB_HOME='C:/Users/mramire8/Documents/Datasets/webkb/webkb'
 
-from bs4 import BeautifulSoup
 
 def clean_html_text(html_text):
+    from bs4 import BeautifulSoup
     soup = BeautifulSoup(html_text)
     return soup.get_text()
 
 
-from os.path import dirname
-from os.path import join
-from os.path import exists
-from os.path import expanduser
-from os.path import isdir
-from os import listdir
-from os import makedirs
-
-
 def get_sub_filenames(input_dir):
+
     names = []
     for path, subdirs, files in os.walk(input_dir):
         for filename in files:
             names.append(os.path.join(path, filename))
     return names
-
 
 
 def load_files_sub(container_path, description=None, categories=None,
@@ -658,6 +655,10 @@ def load_files_sub(container_path, description=None, categories=None,
     :param random_state:
     :return:
     """
+    from os.path import isdir
+    from os import listdir
+    from os.path import join
+
     target = []
     target_names = []
     filenames = []

@@ -700,7 +700,7 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
 
         order = np.argsort(utility, axis=0)[::-1]  ## descending order, top scores
 
-        return [sentences_indoc[i] for i in order[:self.first_k]]
+        return [sentences_indoc[i] for i in order[:self.first_k]], [sent_text[i] for i in order[:self.first_k]]
 
     def set_sent_score(self, sent_score_fn):
         self.score = sent_score_fn
@@ -786,6 +786,7 @@ class AALRandomThenSR(AALUtilityThenStructuredReading):
         self.score = self.score_max  # sentence score
         self.fn_utility = self.utility_unc  # document score
         self.first_k = fk
+        self.human_mode = False
 
     def pick_random(self, pool=None, step_size=1):
         ## version 2:
@@ -799,10 +800,15 @@ class AALRandomThenSR(AALUtilityThenStructuredReading):
 
     def pick_next(self, pool=None, step_size=1):
         # return all order by utility of x
-        chosen = self.pick_random(pool=pool, step_size=self.subpool)
+        chosen = self.pick_random(pool=pool, step_size=self.subpool) ## returns index, and feature vector
         final = []
-        for x, y in chosen[:step_size]:
-            final.append([x, y[0]])
+        if self.human_mode:
+            for x, y in chosen[:step_size]:
+                final.append([x, y[1]])  # index, text
+        else:
+            for x, y in chosen[:step_size]:
+                final.append([x, y[0]]) #index, feature vector
+
         return final
 
     def x_utility_cs(self, instance, instance_text):
@@ -824,7 +830,7 @@ class AALRandomThenSR(AALUtilityThenStructuredReading):
 
         best_sent = [sentences_indoc[i] for i in order]
 
-        return best_sent[:self.first_k]
+        return best_sent[:self.first_k], sent_text[:self.first_k]
 
     def x_utility_maj(self, instance, instance_text):
         """

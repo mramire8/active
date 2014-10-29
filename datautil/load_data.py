@@ -78,7 +78,7 @@ def load_imdb(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(),
     :param path: path of the root directory of the data
     :param subset: what data will be loaded, train or test or all
     :param shuffle:
-    :param rnd: random seed value
+    :param rnd: ranom seed value
     :param vct: vectorizer
     :return: :raise ValueError:
     """
@@ -351,8 +351,8 @@ def load_bloggender(path, subset="all", shuffle=True, rnd=2356, vct=CountVectori
     indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     for train_ind, test_ind in indices:
 
-        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
-                              test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind]))
+        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind], target_names=clases),
+                              test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind], target_names=clases))
 
     if not raw:
         data = process_data(data, fix_k, min_size, vct)
@@ -397,6 +397,7 @@ def get_content(url):
 
 
 def read_evergreenjs(filename):
+    import csv
     docs = []
     labels = []
     # i =0
@@ -443,7 +444,7 @@ def load_evergreen(path, subset="all", shuffle=True, rnd=2356, vct=CountVectoriz
     docs = []
     labels = []
     ## EVERGREEN = 0, NON-EVERGREEN=1
-    # clases = ['S', 'E']
+    clases = ['EVERGREEN', 'SEASONAL']
     filename = "{0}/{1}".format(EVERGREEN_HOME, "train.tsv")
     docs, labels = read_evergreenjs(filename)
     # filename = "{0}/{1}".format(EVERGREEN_HOME, "test.tsv")
@@ -458,8 +459,8 @@ def load_evergreen(path, subset="all", shuffle=True, rnd=2356, vct=CountVectoriz
     indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
     for train_ind, test_ind in indices:
 
-        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind]),
-                              test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind]))
+        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind], target_names=clases),
+                              test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind], target_names=clases))
 
     if not raw:
         data = process_data(data, fix_k, min_size, vct)

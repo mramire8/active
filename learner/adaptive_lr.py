@@ -65,3 +65,41 @@ class LogisticRegressionAdaptive(LogisticRegression):
 
     def __repr__(self):
         return "%s - %s" % (self.__class__.__name__,self.clf)
+
+
+
+class LogisticRegressionAdaptiveV2(LogisticRegression):
+
+    def __init__(self, penalty='l2', dual=False, tol=1e-4, C=1.0,
+                 fit_intercept=True, intercept_scaling=1, class_weight=None,
+                 random_state=None):
+
+        super(LogisticRegressionAdaptiveV2,self).__init__(
+            penalty=penalty, dual=dual, tol=tol, C=C,
+            fit_intercept=fit_intercept, intercept_scaling=intercept_scaling,
+            class_weight=class_weight, random_state=random_state)
+
+        self.c_average = []
+
+    def fit(self, X, y):
+
+        kcv = StratifiedKFold(y=y, n_folds=5, shuffle=False, random_state=None)
+
+        tuned_parameters = [{'C': [pow(10,x) for x in range(-3,4)]}]   #[0.001, 0.01, 0.1, 1, 10, 100, 1000]
+
+        score = 'accuracy'
+
+        clf = GridSearchCV(self.clf, tuned_parameters, scoring=score, cv=kcv)
+        clf.fit(X, y)
+
+        self.clf = clone(clf.best_estimator_, safe=True)
+        self.C = clf.best_estimator_.C
+        self.c_average.append(self.C)
+
+        return super(LogisticRegressionAdaptiveV2,self).fit(X,y)
+
+    def get_c_ave(self):
+        return self.c_average
+
+    def __repr__(self):
+        return "%s - %s" % (self.__class__.__name__,self.clf)

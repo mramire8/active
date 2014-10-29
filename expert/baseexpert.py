@@ -171,7 +171,6 @@ class PredictingExpert(BaseExpert):
 
     def __init__(self, model=LogisticRegression(), cost_function=None,  seed=1234567):
         super(PredictingExpert, self).__init__(model=None, seed=seed)
-        super(PredictingExpert, self).__init__(model=None, seed=seed)
         self.model = model
         self.estimate_cost = cost_function
 
@@ -179,6 +178,41 @@ class PredictingExpert(BaseExpert):
         prediction = self.model.predict_proba(unlabeled)
         return self.model.classes_[np.argmax(prediction, axis=1)]
         # return prediction.argmax()
+
+    def __str__(self):
+        string = "{0}(clf={1}, seed={2})".format(self.__class__.__name__, self.model, self.seed)
+        return string
+
+    def __repr__(self):
+        string = "{0}(clf={1}, seed={2})".format(self.__class__.__name__, self.model, self.seed)
+        return string
+
+
+class HumanExpert(BaseExpert):
+
+    def __init__(self, prompt="", seed=1234567):
+        super(HumanExpert, self).__init__(model=None, seed=seed)
+        self.model = None
+        self.estimate_cost = self.cost_function
+        self.prompt = prompt
+        self.elapsed_time = -1
+
+    def label_instance(self, unlabeled, target=None):
+        import time
+        # prediction = self.model.predict_proba(unlabeled)
+        # return self.model.classes_[np.argmax(prediction, axis=1)]
+        print
+        print ("-"*40)
+        print
+        print '\033[94m'+ unlabeled[0].strip() +'\033[0m'
+        print
+        t0 = time.time()
+        answer = raw_input('\033[92m'+self.prompt+'\033[0m')
+        self.elapsed_time = time.time() - t0
+        return int(answer)
+
+    def cost_function(self, instance=None):
+        return self.elapsed_time
 
     def __str__(self):
         string = "{0}(clf={1}, seed={2})".format(self.__class__.__name__, self.model, self.seed)

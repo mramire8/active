@@ -48,8 +48,8 @@ ap.add_argument('--expert-penalty',
 ap.add_argument('--expert',
                 metavar='EXPERT_TYPE',
                 type=str,
-                default='pred',
-                help='Type of expert [neutral|true|pred]')
+                default='human',
+                help='Type of expert [neutral|true|pred|human]')
 
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
@@ -426,6 +426,8 @@ def main():
     elif "pred" in args.expert:
         expert = baseexpert.PredictingExpert(exp_clf,  #threshold=args.neutral_threshold,
                                              cost_function=cost_model.cost_function)
+    elif "human" in args.expert:
+        expert = baseexpert.HumanExpert(", ".join(["{}={}".format(a,b) for a,b in enumerate(data.train.target_names)])+"? > ")
     else:
         raise Exception("We need an expert!")
     print "Training expert documents:%s" % len(sent_train)
@@ -480,7 +482,7 @@ def main():
         print "Trial: %s" % t
 
         student = get_student(clf, cost_model, sent_clf, t, vct)
-
+        student.human_mode = args.expert == 'human'
         print "\nStudent: %s " % student
 
         train_indices = []
@@ -532,7 +534,11 @@ def main():
                 spent = [0] * len(ground_truth)  ## bootstrap cost is ignored
             else:
                 # print "ask labels"
-                labels = expert.label_instances(query, ground_truth)
+                if isinstance(expert, baseexpert.HumanExpert):
+                    labels = expert.label_instances(query, ground_truth)
+                    # raise Exception("Oops, this is not ready, yet.")
+                else:
+                    labels = expert.label_instances(query, ground_truth)
                 spent = expert.estimate_instances(query_size)
 
             ### accumulate the cost of the query
@@ -577,14 +583,14 @@ def main():
             correct_labels = np.sum(np.array(ground_truth) == np.array(labels).reshape(len(labels)))
 
             accu = metrics.accuracy_score(data.test.target, pred_y)
-
-            print ("TS:{0}\tAccu:{1:.3f}\tAUC:{2:.3f}\tCost:{3:.2f}\tCumm:{4:.2f}\tGT:{5}\tneu:{6}\t{7}\tND:{8}\tTD:{9}\t ora_accu:{10}".format(
-                len(train_indices),
-                accu,
-                auc, query_cost,
-                current_cost,
-                ground_truth,
-                len(neutral_answers), neu_y.shape[0], neu_y.sum(), np.sum(train_y), correct_labels))
+            if not student.human_mode:
+                print ("TS:{0}\tAccu:{1:.3f}\tAUC:{2:.3f}\tCost:{3:.2f}\tCumm:{4:.2f}\tGT:{5}\tneu:{6}\t{7}\tND:{8}\tTD:{9}\t ora_accu:{10}".format(
+                    len(train_indices),
+                    accu,
+                    auc, query_cost,
+                    current_cost,
+                    ground_truth,
+                    len(neutral_answers), neu_y.shape[0], neu_y.sum(), np.sum(train_y), correct_labels))
 
             ## the results should be based on the cost of the labeling
             if iteration > 0:  # bootstrap iteration

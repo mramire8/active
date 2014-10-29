@@ -35,7 +35,7 @@ apfk = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 apfk.add_argument('--train',
                 metavar='TRAIN',
-                default="webkb",
+                default="bgender",
                 help='training data (libSVM format)')
 
 apfk.add_argument('--seed',
@@ -84,7 +84,7 @@ if (__name__ == '__main__'):
 
     ## configuration settings
 
-    test_case = "sent-sent"   # sent-sent, sent-doc, doc-doc, doc-sent
+    test_case = "doc-doc"   # sent-sent, sent-doc, doc-doc, doc-sent
     lim = 2                # none: original method, 1:one character, 0:no limit
     classifier = 'lradapt'
 
@@ -99,7 +99,7 @@ if (__name__ == '__main__'):
 
     sizes = range(50, 1000, 100)
     # sizes = range(50, 2000, 100)
-    sizes = range(50, 5000, 250)
+    sizes = range(50, 1000, 150)
 
     t0 = time()
     np.set_printoptions(precision=4)

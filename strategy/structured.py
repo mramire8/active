@@ -807,7 +807,7 @@ class AALRandomThenSR(AALUtilityThenStructuredReading):
                 final.append([x, y[1]])  # index, text
         else:
             for x, y in chosen[:step_size]:
-                final.append([x, y[0]]) #index, feature vector
+                final.append([x, y[0][0]]) #index, feature vector
 
         return final
 
@@ -830,7 +830,7 @@ class AALRandomThenSR(AALUtilityThenStructuredReading):
 
         best_sent = [sentences_indoc[i] for i in order]
 
-        return best_sent[:self.first_k], sent_text[:self.first_k]
+        return best_sent[:self.first_k], [sent_text[i] for i in order]
 
     def x_utility_maj(self, instance, instance_text):
         """

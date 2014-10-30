@@ -365,6 +365,8 @@ def main():
     elif "pred" in args.expert:
         expert = baseexpert.PredictingExpert(exp_clf,  #threshold=args.neutral_threshold,
                                              cost_function=cost_model.cost_function)
+    elif "human" in args.expert:
+        expert = baseexpert.HumanExpert(", ".join(["{}={}".format(a,b) for a,b in enumerate(data.train.target_names)])+"? > ")
     else:
         raise Exception("We need an expert!")
 
@@ -413,6 +415,7 @@ def main():
         print "Trial: %s" % t
 
         student = get_student(clf, cost_model, sent_clf, t, vct)
+        student.human_mode = args.expert == 'human'
 
         print "\nStudent: %s " % student
 

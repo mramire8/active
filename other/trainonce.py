@@ -35,7 +35,7 @@ apfk = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 apfk.add_argument('--train',
                 metavar='TRAIN',
-                default="bgender",
+                default="arxiv",
                 help='training data (libSVM format)')
 
 apfk.add_argument('--seed',
@@ -79,7 +79,7 @@ if (__name__ == '__main__'):
 
     ## what to print and show
     print_non_zero = False
-    print_cv_accu = True
+    print_cv_accu = False
     show_learning_curve = True
 
     ## configuration settings
@@ -99,7 +99,7 @@ if (__name__ == '__main__'):
 
     sizes = range(50, 1000, 100)
     # sizes = range(50, 2000, 100)
-    sizes = range(50, 1000, 150)
+    sizes = range(50, 2000, 100)
 
     t0 = time()
     np.set_printoptions(precision=4)
@@ -140,12 +140,13 @@ if (__name__ == '__main__'):
         vectorizer.close()
 
     print("Dataset name: %s" % args.train)
+    print("Categories: %s" % data.train.target_names)
 
     data.train.bow = vct.fit_transform(data.train.data)
     data.test.bow = vct.transform(data.test.data)
 
     print("Original data size: ", data.train.bow.shape)
-    print("Original distribution: ", data.train.target.sum())
+    print("Original distribution: ", 1.* data.train.target.sum()/data.train.bow.shape[0])
     ## if I want sentences in the data instead of documents
     sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
     print("Type of data:", test_case)
@@ -263,7 +264,7 @@ if (__name__ == '__main__'):
         data.train.data = data_lst.tolist()
         data.train.bow = data.train.bow[indices]
 
-        kcv = KFold(len(data.train.target), n_folds=3, random_state=random_state,shuffle=True)
+        kcv = KFold(len(data.train.target), n_folds=5, random_state=random_state,shuffle=True)
 
         # print ("Vectorizer:", vct)
 
@@ -290,7 +291,7 @@ if (__name__ == '__main__'):
                              test_scores_mean + test_scores_std, alpha=0.1, color=current_color)
             plt.plot(train_sizes, test_scores_mean, 'o-', mfc='white', linewidth=2, mew=2, markersize=10, mec=current_color, color=current_color,
                      # label="Cross-validation score")
-                     label="C={}".format(c))
+                     label="C={}".format(clf.C))
 
             if show_train:
                 plt.fill_between(train_sizes, train_scores_mean - train_scores_std,

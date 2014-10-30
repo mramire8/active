@@ -49,19 +49,21 @@ ap.add_argument('--expert',
                 metavar='EXPERT_TYPE',
                 type=str,
                 default='human',
-                help='Type of expert [neutral|true|pred|human]')
+                choices=["neutral", "true", "pred","human"],
+                help='Type of expert')
 
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
                 default='rnd_srcs',
-                help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
+                choices=['rnd_first1', 'rnd_sr', 'rnd_srcs', 'rnd_rnd', 'rnd_srmv'],  # , 'rnd_srre'],
+                help='Type of student')
 
 ap.add_argument('--classifier',
                 metavar='STUDENT_MODEL',
                 type=str,
                 default='lradapt',
-                help='[lr|mnb]')
+                help='[lr|mnb|lradapt]')
 
 ap.add_argument('--trials',
                 metavar='TRIALS',
@@ -78,7 +80,7 @@ ap.add_argument('--folds',
 ap.add_argument('--budget',
                 metavar='BUDGET',
                 type=int,
-                default=1200,
+                default=200,
                 help='budget')
 
 ap.add_argument('--step-size',
@@ -90,14 +92,15 @@ ap.add_argument('--step-size',
 ap.add_argument('--bootstrap',
                 metavar='BOOTSTRAP',
                 type=int,
-                default=50,
+                default=100,
                 help='size of the initial labeled dataset')
 
 ap.add_argument('--cost-function',
                 metavar='COST_FUNCTION',
                 type=str,
                 default="uniform",
-                help='cost function of the x-axis [uniform|log|linear|direct]')
+                choices=['uniform','log','linear','direct'],
+                help='cost function of the x-axis')
 
 ap.add_argument('--cost-model',
                 metavar='COST_MODEL',
@@ -108,7 +111,7 @@ ap.add_argument('--cost-model',
 ap.add_argument('--maxiter',
                 metavar='MAXITER',
                 type=int,
-                default=120,
+                default=10,
                 help='Max number of iterations')
 
 ap.add_argument('--limit',

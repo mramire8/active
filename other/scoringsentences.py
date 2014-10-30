@@ -34,7 +34,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="arxiv",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -140,29 +140,41 @@ def print_features(coef, names):
 
 def sentences_average(pool, vct): 
    ## COMPUTE: AVERAGE SENTENCES IN DOCUMENTS
+    from collections import Counter
     tk = vct.build_tokenizer()
     allwords = 0.
-    sum_sent = 0.
-    average_words = 0
+    sum_sent=[]
+    average_words=[]
     min_sent = 10000
     max_sent = 0
+
     for docid, label in zip(pool.remaining, pool.target):
     
         doc = pool.text[docid].replace("<br>", ". ")
         doc = doc.replace("<br />", ". ")
         isent = sent_detector.tokenize(doc)
-        sum_sent += len(isent)
-        min_sent = min(min_sent, len(isent))
-        max_sent = max(max_sent, len(isent))
-        for s in sent_detector.tokenize(doc):
-            average_words += len(tk(s))
-            allwords += 1
+        sents = [s for s in isent if len(s.strip()) > 2]
+        sum_sent.append(len(sents))
+        for s in sents:
+            average_words.append(len(tk(s)))
+    counts = Counter(sum_sent)
+    words = Counter(average_words)
 
-    print("Average sentences fragments %s" % (sum_sent / len(pool.target)))
-    print("Min sentences fragments %s" % min_sent)
-    print("Max sentences fragments %s" % max_sent)
-    print("Total sentences fragments %s" % sum_sent)
-    print("Average size of sentence %s" % (average_words / allwords))
+    print("Average sentences fragments %s" % (np.mean(counts.values())))
+    print("Min sentences fragments %s" % min(counts.keys()))
+    print("Max sentences fragments %s" % max(counts.keys()))
+    print("Total sentences fragments %s" % sum(counts.values()))
+    print("Average size of sentence %s" % (np.mean(words.keys())))
+    print("Most common: ", counts.most_common(3))
+    import matplotlib.pyplot as plt
+    plt.xlabel("# Sentences")
+    plt.ylabel("Frequency")
+
+    n, bins, patches = plt.hist(counts.keys(),weights=counts.values(), bins=10, alpha=0.75)
+    plt.title('Distribution (mean=%.2f, N=%d)' % (np.mean(counts.values()), len(pool.target)))
+
+    plt.show()
+
 
 
 def get_data(clf, train, cats, fixk, min_size, vct, raw):
@@ -345,11 +357,11 @@ def main():
     pool.predicted = []
     pool.remaining = set(range(pool.data.shape[0]))  # indices of the pool
 
-    # print sentences_average(pool, vct)
+    print sentences_average(pool, vct)
 
     fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
 
-    if True:
+    if False:
         ## create data for testing method
         # select the first sentence always
         print args.train

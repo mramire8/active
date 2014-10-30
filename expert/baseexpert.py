@@ -195,6 +195,7 @@ class HumanExpert(BaseExpert):
         self.model = None
         self.estimate_cost = self.cost_function
         self.prompt = prompt
+        self.num_classes=2
         self.elapsed_time = -1
 
     def label_instance(self, unlabeled, target=None):
@@ -205,11 +206,23 @@ class HumanExpert(BaseExpert):
         print ("-"*40)
         print
         print '\033[94m'+ unlabeled[0].strip() +'\033[0m'
-        print
         t0 = time.time()
-        answer = raw_input('\033[92m'+self.prompt+'\033[0m')
+        valid = False
+        answer = -1
+        while not valid:
+            print
+            answer = raw_input('\033[92m'+self.prompt+'\033[0m')
+            try:
+                answer = int(answer)
+                if answer not in range(0,self.num_classes):
+                    valid = False
+                else:
+                    valid = True
+            except ValueError:
+               valid = False
+
         self.elapsed_time = time.time() - t0
-        return int(answer)
+        return answer
 
     def cost_function(self, instance=None):
         return self.elapsed_time

@@ -157,6 +157,41 @@ def load_aviation(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorize
 
     return data
 
+ARXIV_HOME = 'C:/Users/mramire8/Documents/Datasets/arxiv'
+def load_arxiv(path, categories=None, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False, percent=.5):
+    """
+    load text files from Aviation-auto dataset from folders to memory. It will return a 25-75 percent train test split
+    :param path: path of the root directory of the data
+    :param subset: what data will be loaded, train or test or all
+    :param shuffle:
+    :param rnd: random seed value
+    :param vct: vectorizer
+    :return: :raise ValueError:
+    """
+
+    data = bunch.Bunch()
+
+    if subset in ('train', 'test'):
+        raise Exception("We are not ready for train test aviation data yet")
+    elif subset == "all":
+        data = load_files(ARXIV_HOME, encoding="latin1", load_content=True,
+                                   random_state=rnd)
+    else:
+        raise ValueError(
+            "subset can only be 'train', 'test' or 'all', got '%s'" % subset)
+
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
+
+    for train_ind, test_ind in indices:
+        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind],
+                                             target_names=data.target_names),
+                           test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind],
+                                             target_names=data.target_names))
+    if not raw:
+        data = process_data(data, fix_k, min_size, vct)
+
+    return data
+
 
 def load_dummy(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False):
     """
@@ -246,6 +281,10 @@ def load_dataset(name, fixk, categories, vct, min_size, raw=False, percent=.5):
         ########## sraa dataset ######
         data = load_aviation(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
                          fix_k=fixk, raw=raw, percent=percent)
+    elif "arxiv" in name:
+        ########## sraa dataset ######
+        data = load_arxiv(name, shuffle=True, rnd=2356, vct=vct, min_size=None,
+                         fix_k=None, raw=raw, percent=percent)
     elif "20news" in name:
         ########## 20 news groups ######
         data = load_20newsgroups(categories=categories, vectorizer=vct, min_size=min_size,

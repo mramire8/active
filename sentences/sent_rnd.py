@@ -35,7 +35,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="20news",
+                default="imdb",
                 help='training data (libSVM format)')
 
 
@@ -68,7 +68,7 @@ ap.add_argument('--classifier',
 ap.add_argument('--trials',
                 metavar='TRIALS',
                 type=int,
-                default=5,
+                default=3,
                 help='number of trials')
 
 ap.add_argument('--folds',
@@ -630,7 +630,7 @@ def main():
     print("Elapsed time %.3f" % (time.time() - t0))
     cheating = "CHEATING" if args.cheating else "NOCHEAT"
     print_extrapolated_results(accuracies, aucs, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student)
-    oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student, cm=ora_cm)
+    oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student, cm=ora_cm, num_trials=args.trials)
 
 
 def format_query(query_labels):

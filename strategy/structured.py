@@ -651,6 +651,7 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
         # self.score = self.score_max  # sentence score
         # self.fn_utility = self.utility_one  # document score
         self.first_k = fk
+        self.human_mode = False
 
     def pick_next(self, pool=None, step_size=1):
         list_pool = list(pool.remaining)
@@ -670,7 +671,16 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
 
         #After utility, pick the best sentence of each document
         chosen = self.pick_next_sentence(chosen_x, pool=pool)
-        return chosen
+        final = []
+        if self.human_mode:
+            for x, y in chosen[:step_size]:
+                final.append([x, y[1]])  # index, text
+        else:
+            for x, y in chosen[:step_size]:
+                final.append([x, y[0][0]]) #index, feature vector
+
+        return final
+        # return chosen
 
     def pick_next_sentence(self, chosen_x, pool):
         '''

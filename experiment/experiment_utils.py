@@ -172,17 +172,21 @@ def oracle_accuracy(oracle, file_name="out", cm=None, num_trials=5):
     y = [np.mean(oracle[xi]) for xi in x]
     z = [np.std(oracle[xi]) for xi in x]
     w = [np.size(oracle[xi]) for xi in x]
+    step = x[1]- x[0]
     print
     print "Cost\tAccu_Mean\tAccu_Std"
     for a, b, c, d in zip(x, y, z, w):
-        print "%0.3f\t%0.3f\t%0.3f\t%d" % (a, 1.*b/a, c, d)
+        print "%0.3f\t%0.3f\t%0.3f\t%d" % (a, 1.*b/step, c, d)
     # plot_performance(x, y, "Oracle Accuracy Performance " + file_name, "Cost", "Oracle Accuracy")
     print_file(x, y, z, "{}-accuracy.txt".format("oracle-"+file_name))
 
     print "\nCost\tAccu_t1\tAccu_t2\tAccu_t3\tAccu_t4\tAccu_t5"
     trials = [oracle[xi] for xi in x]
     for xi, t in zip(x,trials):
-        print "%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f" % (xi,t[0],t[1],t[2],t[3],t[4])
+        # print "%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f\t%0.3f" % (xi, *t)
+        line = [xi]
+        line.extend(t)
+        print "\t".join(["{0:.3f}".format(i) for i in line])
     # plot_performance(x, y, "Oracle Accuracy Performance " + file_name, "Cost", "Oracle Accuracy")
     print_file2(x, trials, "{}-accuracy.txt".format("oracle-bytrial"+file_name))
 
@@ -201,7 +205,7 @@ def oracle_accuracy(oracle, file_name="out", cm=None, num_trials=5):
             # print ave
             print "%0.3f\t%s" % (xi,"{0[0][0]}\t{0[0][1]}\t{0[1][0]}\t{0[1][1]}".format(ave))
             #["{0[0]} {0[1]} {1[0]} {1[1]}".format(*v) for v in t]
-        print_file_cm(x, cm,"{}-cm-accuracy.txt".format("oracle-"+file_name))
+        print_file_cm(x, cm,"{}-cm-accuracy.txt".format("oracle-"+file_name), num_trials=num_trials)
         print "\nAll trials of confusion matrix"
         print "\n".join(all_t)
 
@@ -250,7 +254,9 @@ def print_file2(x, trial, file_name):
     f.write("Cost\tAccu_t1\tAccu_t2\tAccu_t3\tAccu_t4\tAccu_t5\n")
     for a, t in zip(x, trial):
         # print a, t
-        f.write("{0:.3f}\t{1:.3f}\t{2:.3f}\t{3:.3f}\t{4:.3f}\t{5:.3f}\n".format(a,*t))
+        tline = "\t".join(["{0:.3f}".format(i) for i in t])
+        # f.write("{0:.3f}\t{1:.3f}\t{2:.3f}\t{3:.3f}\t{4:.3f}\t{5:.3f}\n".format(a,*t))
+        f.write("{0:.3f}\t{1}\n".format(a,tline))
     f.close()
 
 

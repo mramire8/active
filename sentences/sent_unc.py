@@ -32,7 +32,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="20news",
+                default="imdb",
                 help='training data (libSVM format)')
 
 ap.add_argument('--expert-penalty',
@@ -62,7 +62,7 @@ ap.add_argument('--classifier',
 ap.add_argument('--trials',
                 metavar='TRIALS',
                 type=int,
-                default=5,
+                default=2,
                 help='number of trials')
 
 ap.add_argument('--folds',
@@ -74,19 +74,19 @@ ap.add_argument('--folds',
 ap.add_argument('--budget',
                 metavar='BUDGET',
                 type=int,
-                default=150,
+                default=200,
                 help='budget')
 
 ap.add_argument('--step-size',
                 metavar='STEP_SIZE',
                 type=int,
-                default=10,
+                default=2,
                 help='instances to acquire at every iteration')
 
 ap.add_argument('--bootstrap',
                 metavar='BOOTSTRAP',
                 type=int,
-                default=50,
+                default=100,
                 help='size of the initial labeled dataset')
 
 ap.add_argument('--cost-function',

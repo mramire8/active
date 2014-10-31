@@ -225,7 +225,8 @@ class HumanExpert(BaseExpert):
         return answer
 
     def cost_function(self, instance=None):
-        return self.elapsed_time
+        return 1
+        # return self.elapsed_time
 
     def __str__(self):
         string = "{0}(clf={1}, seed={2})".format(self.__class__.__name__, self.model, self.seed)

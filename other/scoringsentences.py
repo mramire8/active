@@ -34,7 +34,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="arxiv",
+                default="imdb",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -249,7 +249,7 @@ def get_data(clf, train, cats, fixk, min_size, vct, raw):
     # sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
     sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
-    return exp_clf, data, vct, cost_model, sent_clf
+    return exp_clf, data, vct, cost_model, sent_clf,  expert_data
 
 
 ####################### MAIN ####################
@@ -305,6 +305,9 @@ def score_top_feat(pool, sent_detector, score_model, vcn):
 
 
 def main():
+    test_methods = False
+    test_distribution = True
+    sizes = range(1000, 20000, 2000)
 
     # vct = CountVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=True, ngram_range=(1, 3),
     #                       token_pattern='\\b\\w+\\b')#, tokenizer=StemTokenizer())
@@ -326,10 +329,10 @@ def main():
     if args.fixk < 0:
         args.fixk = None
 
-    clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    # clf = LogisticRegressionAdaptive(penalty='l1', C=args.expert_penalty)
+    # clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
+    clf = LogisticRegressionAdaptive(penalty='l1', C=1)
 
-    exp_clf, data, vct, cost_model, sent_clf = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
+    exp_clf, data, vct, cost_model, sent_clf, sent_data = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
     print "\nExpert: %s " % exp_clf
 
     print ("Sentences scoring")
@@ -355,13 +358,15 @@ def main():
     pool.text = data.train.data
     pool.target = data.train.target
     pool.predicted = []
-    pool.remaining = set(range(pool.data.shape[0]))  # indices of the pool
-
-    print sentences_average(pool, vct)
-
-    fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
+    pool.remaining = range(pool.data.shape[0])  # indices of the pool
 
     if False:
+        print sentences_average(pool, vct)
+
+    fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
+    fns = [student.score_max]
+
+    if test_methods:
         ## create data for testing method
         # select the first sentence always
         print args.train
@@ -369,30 +374,113 @@ def main():
         print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
 
         student.fn_utility = student.utility_one
+
+        clf_test = clf
+        clf_test.fit(pool.data, pool.target)
+        student.set_sentence_model(clf_test)
+        # clf_test = exp_clf
+
         offset = 0
         for fn in fns:
             ## firstk
             test_sent = []
             student.score = fn
             test_sent, target_sent, text_sent = get_sentences_by_method(pool, student, test_sent)
-            predict = exp_clf.predict(test_sent)
-            # print "METHOD: %s" % fn.__name__
+            predict = clf_test.predict(test_sent)
+            pred_prob = clf_test.predict_proba(test_sent)
             mname = fn.__name__
+            plot_histogram(pred_prob[:,0], mname)
+            # print "METHOD: %s" % fn.__name__
+
             if False:
                 print_document(text_sent,  offset, method_name=mname, top=500, truth=pool.target, prediction=predict) #, org_doc=pool.text)
             offset += 500
+            # accu = metrics.accuracy_score(pool.target, predict)
+            print mname
+            score_confusion_matrix(pool.target, predict, [0,1])
+            #print "Accu %s \t%s" % (student.score.__name__, accu)
+
+        if False: ## show top feature method
+            test_sent, target_sent = score_top_feat(pool, sent_detector, exp_clf, vct)
+            predict = clf_test.predict(test_sent)
+
             accu = metrics.accuracy_score(pool.target, predict)
-            print "Accu %s \t%s" % (student.score.__name__, accu)
+            print "Accu %s \t%s" % (score_top_feat.__name__, accu)
 
+    ## get prob. distribution without calibration
+    if test_distribution:
+        ## create data for testing method
+        # select the first sentence always
+        print args.train
+        print "NO CALIBRATION"
+        print "Testing size: %s" % len(pool.target)
+        print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
 
-        test_sent, target_sent = score_top_feat(pool, sent_detector, exp_clf, vct)
-        predict = exp_clf.predict(test_sent)
+        ## Sentence dataset
+        train_sent = sent_data.oracle.train
+        import copy
+        ## don't care utility of document
+        student.fn_utility = student.utility_one
+        ## only testing distribution with max score of the student sentence model
+        fns = [student.score_max]
+        for size in sizes:
 
-        accu = metrics.accuracy_score(pool.target, predict)
-        print "Accu %s \t%s" % (score_top_feat.__name__, accu)
+            # train underlying sentence classifier of the student
+            clf_test = copy.copy(clf)
+            clf_test.fit(train_sent.bow[:size], train_sent.target[:size])
+            student.set_sentence_model(clf_test)
+
+            for fn in fns:
+                test_sent = []
+                student.score = fn
+
+                ## for every document pick a sentence
+                test_sent, target_sent, text_sent = get_sentences_by_method(pool, student, test_sent)
+                predict = clf_test.predict(test_sent)
+                pred_prob = clf_test.predict_proba(test_sent)
+                mname = fn.__name__
+                print "-"*40
+                test_name = "no-call-{}-size-{}".format(mname, size)
+                plot_histogram(pred_prob[:,0], test_name, show=False)
+                print
+                score_confusion_matrix(pool.target, predict, [0,1])
 
 
     print("Elapsed time %.3f" % (time.time() - t0))
+
+
+def reshape_scores(scores, sent_mat):
+    sr = []
+    i = 0
+    for row in sent_mat:
+        sc = []
+        for col in row:
+            sc.append(scores[i])
+            i = i+1
+        sr.append(sc)
+    return np.array(sr)
+
+
+def score_confusion_matrix(predicted, true_labels, labels):
+    cm = metrics.confusion_matrix(true_labels, predicted, labels=labels)
+    print "Predicted -->"
+    print "\t" + "\t".join(str(l) for l in np.unique(true_labels))
+    for l in np.unique(true_labels):
+        print "{}\t{}".format(l,"\t".join(["{}".format(r) for r in cm[l]]))
+    print "\n{}\t{}".format(cm[0][0]+cm[1][0],cm[0][1]+cm[1][1],)
+
+def plot_histogram(values, title, show=False):
+    import matplotlib.pyplot as plt
+
+    n, bins, patches = plt.hist(values, stacked=True, bins=100, align='mid',label=['y=0', 'y=1'], alpha=.7)
+
+    plt.title(title + ' Distribution $P_{L}(y=0|x)$ $y=0$ (mean=%.2f, N=%d)' % (np.mean(values), len(values)), fontsize=12)
+    plt.xlabel("$P_{L}(\hat{y}=0|x)$")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.savefig(title+".png", bbox_inches="tight", dpi=200, transparent=True)
+    if show:
+        plt.show()
 
 
 def neutral_label(label):

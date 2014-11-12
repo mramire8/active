@@ -84,7 +84,7 @@ if (__name__ == '__main__'):
 
     ## configuration settings
 
-    test_case = "doc-doc"   # sent-sent, sent-doc, doc-doc, doc-sent
+    test_case = "sent-sent"   # sent-sent, sent-doc, doc-doc, doc-sent
     lim = 2                # none: original method, 1:one character, 0:no limit
     classifier = 'lradapt'
 
@@ -111,7 +111,11 @@ if (__name__ == '__main__'):
                   ['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware'],
                   ['rec.sport.baseball', 'sci.crypt']]
     categories = [['student','faculty']]
+
     categories = [['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware']]
+
+    categories = [['cs.AI','cs.LG']]
+
     reg = args.reg
     print (reg)
 
@@ -135,9 +139,9 @@ if (__name__ == '__main__'):
         fixk_file = open(fixk_saved, "wb")
         pickle.dump(data, fixk_file)
         fixk_file.close()
-        vectorizer = open("{0}vectorizer.p".format(args.train), "wb")
-        pickle.dump(vct, vectorizer)
-        vectorizer.close()
+        # vectorizer = open("{0}vectorizer.p".format(args.train), "wb")
+        # pickle.dump(vct, vectorizer)
+        # vectorizer.close()
 
     print("Dataset name: %s" % args.train)
     print("Categories: %s" % data.train.target_names)

@@ -172,10 +172,10 @@ def load_arxiv(path, categories=None, subset="all", shuffle=True, rnd=2356, vct=
     data = bunch.Bunch()
 
     if subset in ('train', 'test'):
-        raise Exception("We are not ready for train test aviation data yet")
+        raise Exception("We are not ready for train test arxiv data yet")
     elif subset == "all":
         data = load_files(ARXIV_HOME, encoding="latin1", load_content=True,
-                                   random_state=rnd)
+                                   random_state=rnd, categories=categories)
     else:
         raise ValueError(
             "subset can only be 'train', 'test' or 'all', got '%s'" % subset)
@@ -283,7 +283,7 @@ def load_dataset(name, fixk, categories, vct, min_size, raw=False, percent=.5):
                          fix_k=fixk, raw=raw, percent=percent)
     elif "arxiv" in name:
         ########## sraa dataset ######
-        data = load_arxiv(name, shuffle=True, rnd=2356, vct=vct, min_size=None,
+        data = load_arxiv(name, categories=categories, shuffle=True, rnd=2356, vct=vct, min_size=None,
                          fix_k=None, raw=raw, percent=percent)
     elif "20news" in name:
         ########## 20 news groups ######

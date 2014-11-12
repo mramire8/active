@@ -121,6 +121,13 @@ def get_data(clf, train, cats, fixk, min_size, vct, raw, limit=2):
 
     return exp_clf, data, vct, sent_clf, expert_data
 
+
+def calibrate_scores(n_scores, bounds=(.5,1)):
+    delta = 1.* (bounds[1] - bounds[0]) / (n_scores -1)
+    calibrated = (np.ones(n_scores)*bounds[1]) - (np.array(range(n_scores))*delta)
+    return calibrated
+
+
 def model_score_distribution(clf, test, ground_truth, title):
     predictions = clf.predict_proba(test)
     predicted_labels = clf.predict(test)

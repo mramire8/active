@@ -364,6 +364,10 @@ def main():
         categories=categories[2]
     elif args.train == "webkb":
         categories = ['student','faculty']
+    elif args.train == "arxiv":
+        categories = [['cs.AI','cs.LG'],
+                      ['physics.comp-ph','physics.data-an']]
+        categories=categories[0]
 
     min_size = 10
 

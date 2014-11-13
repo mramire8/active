@@ -271,6 +271,65 @@ def get_sentences_by_method(pool, student, test_sent):
         target_sent.append(pool.target[i])
     return test_sent, target_sent, text_sent
 
+
+def calibrate_scores(n_scores, bounds=(.5,1)):
+    delta = 1.* (bounds[1] - bounds[0]) / (n_scores -1)
+    calibrated = (np.ones(n_scores)*bounds[1]) - (np.array(range(n_scores))*delta)
+    return calibrated
+
+
+def reshape_scores(scores, sent_mat):
+    sr = []
+    i = 0
+    for row in sent_mat:
+        sc = []
+        for col in row:
+            sc.append(scores[i])
+            i = i+1
+        sr.append(sc)
+    return np.array(sr)
+
+
+def get_sentences_by_method_cal(pool, student, test_sent):
+    test_sent = []
+
+    list_pool = list(pool.remaining)
+    # indices = rand.permutation(len(pool.remaining))
+    # remaining = [list_pool[index] for index in indices]
+    target_sent = []
+    text_sent = []
+    all_scores = []
+    docs = []
+    for i in list_pool:
+        utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
+        all_scores.extend(utilities) ## every score
+        docs.append(sent_bow)  ## sentences for each document
+        text_sent.append(sent_txt)  ## text sentences for each document
+        target_sent.append(pool.target[i])   # target of every document, ground truth
+
+    ## Calibrate scores
+    n = len(all_scores)
+    all_scores = np.array(all_scores)
+    break_point = 2
+    order = all_scores.argsort()
+    a = calibrate_scores(n, bounds=(.5,1))
+    a = np.append(a, calibrate_scores(n - n/break_point, bounds=(0,.5)))
+    new_scores = a[order]
+    cal_scores = reshape_scores(new_scores, docs)
+
+    selected_sent = [np.argmax(row) for row in cal_scores] ## get the sentence of the highest score per document
+    selected = [docs[i][k] for i, k in enumerate(selected_sent)]  ## get the bow
+    selected_score = [np.max(row) for i, row in enumerate(cal_scores)]  ## get the bow
+
+    for s in selected:
+        if isinstance(test_sent, list):
+            test_sent = s
+        else:
+            test_sent = vstack([test_sent, s], format='csr')
+
+    return test_sent, selected_score
+
+
 from scipy.sparse import diags
 
 
@@ -306,7 +365,8 @@ def score_top_feat(pool, sent_detector, score_model, vcn):
 
 def main():
     test_methods = False
-    test_distribution = True
+    test_distribution = False
+    sent_average = True
     sizes = range(1000, 20000, 2000)
 
     # vct = CountVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=True, ngram_range=(1, 3),
@@ -343,7 +403,7 @@ def main():
                                               subpool=250, cost_model=cost_model)
     student.set_score_model(exp_clf)  # expert model
     student.set_sentence_model(sent_clf)  # expert sentence model
-    student.limit = 1
+    student.limit = 2
     print "Expert: :", exp_clf
     print "Sentence:", sent_clf
 
@@ -360,7 +420,7 @@ def main():
     pool.predicted = []
     pool.remaining = range(pool.data.shape[0])  # indices of the pool
 
-    if False:
+    if sent_average:
         print sentences_average(pool, vct)
 
     fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
@@ -375,10 +435,10 @@ def main():
 
         student.fn_utility = student.utility_one
 
-        clf_test = clf
-        clf_test.fit(pool.data, pool.target)
-        student.set_sentence_model(clf_test)
-        # clf_test = exp_clf
+        # clf_test = clf
+        # clf_test.fit(pool.data, pool.target)
+        # student.set_sentence_model(clf_test)
+        clf_test = sent_clf
 
         offset = 0
         for fn in fns:
@@ -408,6 +468,7 @@ def main():
             print "Accu %s \t%s" % (score_top_feat.__name__, accu)
 
     ## get prob. distribution without calibration
+    calibrated = True
     if test_distribution:
         ## create data for testing method
         # select the first sentence always
@@ -435,39 +496,36 @@ def main():
                 student.score = fn
 
                 ## for every document pick a sentence
-                test_sent, target_sent, text_sent = get_sentences_by_method(pool, student, test_sent)
+                if calibrated:
+                    test_sent, scores = get_sentences_by_method_cal(pool, student, test_sent)
+                else:
+                    test_sent, _, _ = get_sentences_by_method(pool, student, test_sent)
+                    pred_prob = clf_test.predict_proba(test_sent)
+                    scores = pred_prob[:,0]
+
                 predict = clf_test.predict(test_sent)
-                pred_prob = clf_test.predict_proba(test_sent)
                 mname = fn.__name__
                 print "-"*40
-                test_name = "no-call-{}-size-{}".format(mname, size)
-                plot_histogram(pred_prob[:,0], test_name, show=False)
-                print
+                test_name = "calib-{}-size-{}".format(mname, size)
+                print test_name
+                plot_histogram(scores, test_name, show=False)
                 score_confusion_matrix(pool.target, predict, [0,1])
 
 
     print("Elapsed time %.3f" % (time.time() - t0))
 
 
-def reshape_scores(scores, sent_mat):
-    sr = []
-    i = 0
-    for row in sent_mat:
-        sc = []
-        for col in row:
-            sc.append(scores[i])
-            i = i+1
-        sr.append(sc)
-    return np.array(sr)
+def collect_scores(data, clf, sent_detector):
+    pass
 
-
-def score_confusion_matrix(predicted, true_labels, labels):
+def score_confusion_matrix(true_labels, predicted, labels):
     cm = metrics.confusion_matrix(true_labels, predicted, labels=labels)
     print "Predicted -->"
     print "\t" + "\t".join(str(l) for l in np.unique(true_labels))
     for l in np.unique(true_labels):
         print "{}\t{}".format(l,"\t".join(["{}".format(r) for r in cm[l]]))
     print "\n{}\t{}".format(cm[0][0]+cm[1][0],cm[0][1]+cm[1][1],)
+
 
 def plot_histogram(values, title, show=False):
     import matplotlib.pyplot as plt
@@ -481,6 +539,8 @@ def plot_histogram(values, title, show=False):
     plt.savefig(title+".png", bbox_inches="tight", dpi=200, transparent=True)
     if show:
         plt.show()
+    else:
+        plt.clf()
 
 
 def neutral_label(label):

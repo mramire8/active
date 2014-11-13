@@ -79,7 +79,7 @@ if (__name__ == '__main__'):
 
     ## what to print and show
     print_non_zero = False
-    print_cv_accu = False
+    print_cv_accu = True
     show_learning_curve = True
 
     ## configuration settings
@@ -114,7 +114,8 @@ if (__name__ == '__main__'):
 
     categories = [['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware']]
 
-    categories = [['cs.AI','cs.LG']]
+    categories = [['cs.AI','cs.LG'],
+                  ['physics.comp-ph','physics.data-an']]
 
     reg = args.reg
     print (reg)
@@ -135,7 +136,7 @@ if (__name__ == '__main__'):
     except (IOError, ValueError):
         print ("Loading from scratch...")
         #name, fixk, categories, vct, min_size, raw=False, percent=.5
-        data = load_dataset(args.train, 10, categories[0], vct, 100, percent=.5, raw=True)
+        data = load_dataset(args.train, 10, categories[1], vct, 100, percent=.5, raw=True)
         fixk_file = open(fixk_saved, "wb")
         pickle.dump(data, fixk_file)
         fixk_file.close()

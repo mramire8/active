@@ -335,6 +335,23 @@ class AALStructuredReading(AnytimeLearner):
         # print utility_sorted[0], util_score
         return utility_sorted[0], sentences_indoc[order[0]], sent_text[order[0]]
 
+    def x_utility_cal(self, instance, instance_text):
+        # prob = self.model.predict_proba(instance)
+        # unc = 1 - prob.max()
+
+        util_score = self.fn_utility(instance)
+
+        sentences_indoc, sent_text = self.getk(instance_text)
+        self.counter = 0
+        self.curret_doc = instance
+        utility = np.array([self.score(xik) * util_score for xik in sentences_indoc])
+
+        order = np.argsort(utility, axis=0)[::-1]  ## descending order
+
+        utility_sorted = utility[order]
+        # print utility_sorted[0], util_score
+        return utility_sorted, [sentences_indoc[o] for o in order], [sent_text[o] for o in order]
+
     def score_base(self, sentence):
         """
         Return the score for the sentences

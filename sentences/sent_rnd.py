@@ -35,7 +35,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="20news",
                 help='training data (libSVM format)')
 
 
@@ -48,7 +48,7 @@ ap.add_argument('--expert-penalty',
 ap.add_argument('--expert',
                 metavar='EXPERT_TYPE',
                 type=str,
-                default='human',
+                default='pred',
                 choices=["neutral", "true", "pred","human"],
                 help='Type of expert')
 
@@ -135,6 +135,9 @@ ap.add_argument('--seed',
 ap.add_argument('--cheating',
                 action="store_true",
                 help='experiment cheating version - study purposes')
+ap.add_argument('--calibrate',
+                action="store_true",
+                help='calibrate student sentence classifier scores for SR')
 
 args = ap.parse_args()
 rand = np.random.RandomState(args.seed)
@@ -516,6 +519,7 @@ def main():
         query_index = None
         query_size = None
         oracle_answers = 0
+        calibrated=args.calibrate
         while 0 < student.budget and len(pool.remaining) > pool.offset and iteration <= args.maxiter:
             util = []
 
@@ -526,8 +530,10 @@ def main():
 
                 print
             else:
-
-                chosen = student.pick_next(pool=pool, step_size=step_size)
+                if not calibrated:
+                    chosen = student.pick_next(pool=pool, step_size=step_size)
+                else:
+                    chosen = student.pick_next_cal(pool=pool, step_size=step_size)
 
                 query_index = [x for x, y in chosen]  # document id of chosen instances
                 query = [y for x, y in chosen]  # sentence of the document

@@ -302,6 +302,97 @@ class AALStructuredReading(AnytimeLearner):
         chosen_text = [sent_text[t] for t in sorted_ind[:int(step_size)]]
         return chosen, chosen_text
 
+    def pick_next_cal(self, pool=None, step_size=1):
+        from sklearn import preprocessing
+
+        list_pool = list(pool.remaining)
+        indices = self.randgen.permutation(len(pool.remaining))
+        remaining = [list_pool[index] for index in indices]
+
+        if self.subpool is None:
+            self.subpool = len(pool.remaining)
+
+        target_sent = []
+        text_sent = []
+        all_scores = []
+        all_p0 = []
+        docs = []
+        unc_utility = []
+        for i in remaining[:self.subpool]:
+            unc_utility.append(self.fn_utility(pool.data[i]))
+            utilities, sent_bow, sent_txt = self.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
+            all_scores.extend(utilities) ## every score
+            docs.append(sent_bow)  ## sentences for each document list of list
+            text_sent.append(sent_txt)  ## text sentences for each document
+            target_sent.append(pool.target[i])   # target of every document, ground truth
+            all_p0.extend([self.sent_model.predict_proba(s)[0][0] for s in sent_bow])
+
+        ## Calibrate scores
+        n = len(all_scores)
+        if n != len(all_p0):
+            raise Exception("Oops there is something wrong! We don't have the same size")
+
+        all_p0 = np.array(all_p0)
+
+        order = all_p0.argsort()[::-1] ## descending order
+        ## generate scores equivalent to max prob
+        ordered_p0 = all_p0[order]
+        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
+        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
+        a = np.concatenate((c0_scores, c1_scores))
+
+        new_scores = np.zeros(n)
+        new_scores[order] = a
+        cal_scores = self._reshape_scores(new_scores, docs)
+        p0 = self._reshape_scores(all_p0, docs)
+
+        selected_sent = [np.argmax(row) for row in cal_scores]  # get the sentence index of the highest score per document
+        selected = [docs[i][k] for i, k in enumerate(selected_sent)]  # get the bow of the sentences with the highest score
+        selected_score = [np.max(row) for i, row in enumerate(cal_scores)]  ## get the max utility score per document
+        selected_cl = [p0[i][k] for i, k in enumerate(selected_sent)]  # p0 of the highest sentence
+        test_sent = list_to_sparse(selected)  # bow of each sentence selected
+        selected_text = [text_sent[i][k] for i,k in enumerate(selected_sent)]
+        ## pick document-sentence
+
+        joint = np.array(unc_utility) * selected_score
+        final_order = joint.argsort()[::-1]
+
+        chosen = [[remaining[x], test_sent[x]] for x in final_order[:int(step_size)]]  #index and k of chosen
+        chosen_text = [selected_text[x] for x in final_order[:int(step_size)]]
+        #todo: human vs simulated expert
+
+        return chosen#, chosen_text
+
+    def _calibrate_scores(self, n_scores, bounds=(.5,1)):
+        """
+        Create an array with values uniformly distributed with int range given by bounds
+        :param n_scores: number of scores to generate
+        :param bounds: lower and upper bound of the array
+        :return: narray
+        """
+        delta = 1.* (bounds[1] - bounds[0]) / (n_scores -1)
+        calibrated = (np.ones(n_scores)*bounds[1]) - (np.array(range(n_scores))*delta)
+        return calibrated
+
+
+    def _reshape_scores(self, scores, sent_mat):
+        """
+        Reshape scores to have the same structure as the list of list sent_mat
+        :param scores: one dimensional array of scores
+        :param sent_mat: list of lists
+        :return: narray : reshaped scores
+        """
+        sr = []
+        i = 0
+        for row in sent_mat:
+            sc = []
+            for col in row:
+                sc.append(scores[i])
+                i = i+1
+            sr.append(sc)
+        return np.array(sr)
+
+
     def utility_base(self, instance):
         raise Exception("We need a utility function")
 
@@ -333,18 +424,14 @@ class AALStructuredReading(AnytimeLearner):
 
         utility_sorted = utility[order]
         # print utility_sorted[0], util_score
-        return utility_sorted[0], sentences_indoc[order[0]], sent_text[order[0]]
+        return utility_sorted[0], sentences_indoc[order[0]], sent_text[order[0]]#, order[0]
 
     def x_utility_cal(self, instance, instance_text):
-        # prob = self.model.predict_proba(instance)
-        # unc = 1 - prob.max()
-
-        util_score = self.fn_utility(instance)
 
         sentences_indoc, sent_text = self.getk(instance_text)
         self.counter = 0
         self.curret_doc = instance
-        utility = np.array([self.score(xik) * util_score for xik in sentences_indoc])
+        utility = np.array([self.score(xik) for xik in sentences_indoc])
 
         order = np.argsort(utility, axis=0)[::-1]  ## descending order
 
@@ -464,6 +551,15 @@ class AALStructuredReading(AnytimeLearner):
                  % ", budget=" % self.budget % ", seed=" % self.seed % ")"
         return string
 
+from scipy.sparse import vstack
+def list_to_sparse(selected):
+    test_sent = []
+    for s in selected:
+        if isinstance(test_sent, list):
+            test_sent = s
+        else:
+            test_sent = vstack([test_sent, s], format='csr')
+    return test_sent
 
 ## Doc: UNC Sentence: max confidence
 class AALStructuredReadingMax(AALStructuredReading):

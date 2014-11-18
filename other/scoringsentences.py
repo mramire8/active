@@ -261,15 +261,18 @@ def get_sentences_by_method(pool, student, test_sent):
     # remaining = [list_pool[index] for index in indices]
     target_sent = []
     text_sent = []
+    scores = []
+    order_sent=[]
     for i in list_pool:
-        _, sent_bow, sent_txt = student.x_utility(pool.data[i], pool.text[i])
+        scores, sent_bow, sent_txt = student.x_utility(pool.data[i], pool.text[i])
         if isinstance(test_sent, list):
             test_sent = sent_bow
         else:
             test_sent = vstack([test_sent, sent_bow], format='csr')
         text_sent.append(sent_txt)
         target_sent.append(pool.target[i])
-    return test_sent, target_sent, text_sent
+        # order_sent.append(order)
+    return test_sent, target_sent, text_sent, scores#, order_sent
 
 
 def calibrate_scores(n_scores, bounds=(.5,1)):
@@ -311,24 +314,84 @@ def get_sentences_by_method_cal(pool, student, test_sent):
     n = len(all_scores)
     all_scores = np.array(all_scores)
     break_point = 2
-    order = all_scores.argsort()
-    a = calibrate_scores(n, bounds=(.5,1))
-    a = np.append(a, calibrate_scores(n - n/break_point, bounds=(0,.5)))
-    new_scores = a[order]
+    order = all_scores.argsort()[::-1] ## descending order
+    ## generate scores equivalent to max prob
+    a = calibrate_scores(n/break_point, bounds=(.5,1))
+    a = np.append(a, calibrate_scores(n - n/break_point, bounds=(1,.5)))
+
+    ## new scores assigned to original sentence order
+    new_scores = np.zeros(n)
+    new_scores[order] = a
     cal_scores = reshape_scores(new_scores, docs)
 
     selected_sent = [np.argmax(row) for row in cal_scores] ## get the sentence of the highest score per document
     selected = [docs[i][k] for i, k in enumerate(selected_sent)]  ## get the bow
     selected_score = [np.max(row) for i, row in enumerate(cal_scores)]  ## get the bow
+    test_sent = list_to_sparse(selected)
 
+    return test_sent, np.array(selected_score), selected_sent
+
+
+def list_to_sparse(selected):
+    test_sent = []
     for s in selected:
         if isinstance(test_sent, list):
             test_sent = s
         else:
             test_sent = vstack([test_sent, s], format='csr')
+    return test_sent
 
-    return test_sent, selected_score
 
+def get_sentences_by_method_cal_scale(pool, student, test_sent):
+    from sklearn import preprocessing 
+    test_sent = []
+
+    list_pool = list(pool.remaining)
+    # indices = rand.permutation(len(pool.remaining))
+    # remaining = [list_pool[index] for index in indices]
+    target_sent = []
+    text_sent = []
+    all_scores = []
+    all_p0 = []
+    docs = []
+    for i in list_pool:
+        utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
+        all_scores.extend(utilities) ## every score
+        docs.append(sent_bow)  ## sentences for each document
+        text_sent.append(sent_txt)  ## text sentences for each document
+        target_sent.append(pool.target[i])   # target of every document, ground truth
+        all_p0.extend([student.sent_model.predict_proba(s)[0][0] for s in sent_bow])
+    ## Calibrate scores
+
+    n = len(all_scores)
+    if n != len(all_p0):
+        raise Exception("Oops there is something wrong! We don't have the same size")
+
+    all_p0 = np.array(all_p0)
+
+    order = all_p0.argsort()[::-1] ## descending order
+    ## generate scores equivalent to max prob
+    ordered_p0 = all_p0[order]
+    class_sensitive = False
+    if class_sensitive:
+        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
+        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
+        a = np.concatenate((c0_scores, c1_scores))
+    else:
+        a = preprocessing.scale(ordered_p0)
+
+    new_scores = np.zeros(n)
+    new_scores[order] = a
+    cal_scores = reshape_scores(new_scores, docs)
+    p0 = reshape_scores(all_p0, docs)
+
+    selected_sent = [np.argmax(row) for row in cal_scores] ## get the sentence of the highest score per document
+    selected = [docs[i][k] for i, k in enumerate(selected_sent)]  ## get the bow
+    selected_score = [np.max(row) for i, row in enumerate(cal_scores)]  ## get the bow
+    selected_cl = [p0[i][k] for i, k in enumerate(selected_sent)]
+    test_sent = list_to_sparse(selected)
+
+    return test_sent, np.array(selected_score), selected_cl, selected_sent
 
 from scipy.sparse import diags
 
@@ -365,9 +428,9 @@ def score_top_feat(pool, sent_detector, score_model, vcn):
 
 def main():
     test_methods = False
-    test_distribution = False
-    sent_average = True
-    sizes = range(1000, 20000, 2000)
+    test_distribution = True
+    sent_average = False
+    sizes = range(1000, 20000, 5000)
 
     # vct = CountVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=True, ngram_range=(1, 3),
     #                       token_pattern='\\b\\w+\\b')#, tokenizer=StemTokenizer())
@@ -468,12 +531,12 @@ def main():
             print "Accu %s \t%s" % (score_top_feat.__name__, accu)
 
     ## get prob. distribution without calibration
-    calibrated = True
+    calibrated = 'none'
     if test_distribution:
         ## create data for testing method
         # select the first sentence always
         print args.train
-        print "NO CALIBRATION"
+
         print "Testing size: %s" % len(pool.target)
         print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
 
@@ -484,39 +547,43 @@ def main():
         student.fn_utility = student.utility_one
         ## only testing distribution with max score of the student sentence model
         fns = [student.score_max]
+        sizes = [1]
         for size in sizes:
 
             # train underlying sentence classifier of the student
-            clf_test = copy.copy(clf)
-            clf_test.fit(train_sent.bow[:size], train_sent.target[:size])
-            student.set_sentence_model(clf_test)
-
+            # clf_test = copy.copy(clf)
+            # clf_test.fit(train_sent.bow[:size], train_sent.target[:size])
+            # student.set_sentence_model(clf_test)
+            clf_test = student.sent_model
             for fn in fns:
                 test_sent = []
                 student.score = fn
 
                 ## for every document pick a sentence
-                if calibrated:
-                    test_sent, scores = get_sentences_by_method_cal(pool, student, test_sent)
+                if calibrated == 'zscore':
+                    test_sent, scores, ori_scores, sel_sent = get_sentences_by_method_cal_scale(pool, student, test_sent)
+                    # plot_histogram(sel_sent, "Zcores", show=True)
+                elif calibrated == 'uniform':
+                    test_sent, scores, sel_sent = get_sentences_by_method_cal(pool, student, test_sent)
+                    # plot_histogram(sel_sent, "Uniform", show=True)
                 else:
-                    test_sent, _, _ = get_sentences_by_method(pool, student, test_sent)
-                    pred_prob = clf_test.predict_proba(test_sent)
-                    scores = pred_prob[:,0]
+                    test_sent, _, _, scores = get_sentences_by_method(pool, student, test_sent)
+                    # plot_histogram(sel_sent, "None", show=True)
+                    # pred_prob = clf_test.predict_proba(test_sent)
+                    # scores = pred_prob[:,0]
 
                 predict = clf_test.predict(test_sent)
                 mname = fn.__name__
                 print "-"*40
-                test_name = "calib-{}-size-{}".format(mname, size)
+                test_name = "caliball-{}-size-{}".format(mname, size)
                 print test_name
-                plot_histogram(scores, test_name, show=False)
+                plot_histogram([scores[pool.target == 0], scores[pool.target==1]], test_name, show=False)
                 score_confusion_matrix(pool.target, predict, [0,1])
+                accu = metrics.accuracy_score(pool.target, predict)
+                print "Accu %s \t%s" % (test_name, accu)
 
+    print "Elapsed time %.3f" % (time.time() - t0)
 
-    print("Elapsed time %.3f" % (time.time() - t0))
-
-
-def collect_scores(data, clf, sent_detector):
-    pass
 
 def score_confusion_matrix(true_labels, predicted, labels):
     cm = metrics.confusion_matrix(true_labels, predicted, labels=labels)
@@ -530,9 +597,9 @@ def score_confusion_matrix(true_labels, predicted, labels):
 def plot_histogram(values, title, show=False):
     import matplotlib.pyplot as plt
 
-    n, bins, patches = plt.hist(values, stacked=True, bins=100, align='mid',label=['y=0', 'y=1'], alpha=.7)
+    n, bins, patches = plt.hist(values, stacked=True, bins=100, align='mid',label=['y=0', 'y=1'], alpha=.65)
 
-    plt.title(title + ' Distribution $P_{L}(y=0|x)$ $y=0$ (mean=%.2f, N=%d)' % (np.mean(values), len(values)), fontsize=12)
+    # plt.title(title + ' Distribution $P_{L}(y=0|x)$ $y=0$ (mean=%.2f, N=%d)' % (np.mean(values), len(values)), fontsize=12)
     plt.xlabel("$P_{L}(\hat{y}=0|x)$")
     plt.ylabel("Frequency")
     plt.legend()
@@ -542,12 +609,6 @@ def plot_histogram(values, title, show=False):
     else:
         plt.clf()
 
-
-def neutral_label(label):
-    if label is None:
-        return 0
-    else:
-        return 1
 
 def print_document(text_sent, offset, method_name='', top=500, **kwargs):
     #text_sent, truth=pool.target, prediction=predict, org_doc=pool.text):
@@ -564,16 +625,6 @@ def print_document(text_sent, offset, method_name='', top=500, **kwargs):
                 print w[i], "\t",
         print text_sent[i].encode('latin1').replace("\n"," ")
         # print "-"*60
-
-def format_query(query_labels):
-    string = ""
-    for l, q in query_labels:
-        string = string + "{0}".format(l)
-        for qi in q:
-            string = string + "\t{0:.2f} ".format(qi)
-        string = string + "\n"
-    return string
-
 
 if __name__ == '__main__':
     main()

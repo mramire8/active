@@ -56,7 +56,7 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='rnd_sr_tfe',
+                default='sr',
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--trials',
@@ -116,6 +116,10 @@ ap.add_argument('--seed',
 ap.add_argument('--cheating',
                 action="store_true",
                 help='experiment cheating version - study purposes')
+
+ap.add_argument('--calibrate',
+                action="store_true",
+                help='calibrate student sentence classifier scores for SR')
 
 args = ap.parse_args()
 rand = np.random.mtrand.RandomState(args.seed)
@@ -509,8 +513,10 @@ def main():
                 print "Bootstrap: %s " % bt.__class__.__name__
                 print
             else:
-
-                chosen = student.pick_next(pool=pool, step_size=step_size)
+                if args.calibrate:
+                    chosen = student.pick_next_cal(pool=pool, step_size=step_size)
+                else:
+                    chosen = student.pick_next(pool=pool, step_size=step_size)
 
                 query_index = [x for x, y in chosen]  # document id of chosen instances
                 query = [y for x, y in chosen]  # sentence of the document
@@ -535,21 +541,6 @@ def main():
 
             neutral_answers = np.array([[x, z] for x, y, z in zip(query_index, labels, query_size) if y is None]) \
                 if iteration != 0 else np.array([])
-
-            #### Debugging
-            # print ground_truth.sum(),
-            # tmp = [sent_clf.predict(q) for q in query]
-            # print np.array(tmp).reshape(len(tmp)).sum(),
-            # print np.array(labels).reshape(len(labels)).sum(),
-
-            #### Debugging
-            # if iteration > 0:
-            #     print "--"*40
-            #     print ground_truth, np.sum(ground_truth)
-            #     print useful_answers[:,1], np.sum(useful_answers[:,1])
-            #     for i in chosen_text:
-            #         print i
-            ### end debugging
 
             ## add data recent acquired to train
             if useful_answers.shape[0] != 0:

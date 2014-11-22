@@ -11,23 +11,20 @@ sys.path.append(os.path.abspath("../"))
 sys.path.append(os.path.abspath("../experiment/"))
 
 
-from experiment.experiment_utils import split_data_first1sentences, parse_parameters_mat, clean_html, set_cost_model
+from experiment.experiment_utils import parse_parameters_mat, clean_html, set_cost_model
 import argparse
 import numpy as np
 from sklearn.datasets.base import Bunch
-from datautil.load_data import load_from_file, split_data
+from datautil.load_data import load_from_file
 from sklearn import linear_model
 import time
 
 from collections import defaultdict
-from strategy import structured
-from expert import baseexpert
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import random
 import nltk
 from scipy.sparse import vstack
-from sklearn import metrics
-from learner.adaptive_lr import LogisticRegressionAdaptive
+
 
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
@@ -122,12 +119,12 @@ def sentences_average(pool, vct):
     print("Average size of sentence %s" % (average_words / allwords))
 
 
-def get_data(clf, train, cats, fixk, min_size, vct, raw):
-    import copy
+def get_data(train, cats, vct, raw):
 
-    min_size = 10
+    min_size = None
 
     args.fixk = None
+    fixk=None
 
     data, vct2 = load_from_file(train, cats, fixk, min_size, vct, raw=raw)
 
@@ -150,98 +147,13 @@ def get_data(clf, train, cats, fixk, min_size, vct, raw):
 
     print("Train:{}, Test:{}, {}".format(len(data.train.data), len(data.test.data), data.test.target.shape[0]))
 
-    ## create splits of data: pool, test, oracle, sentences
-    expert_data = Bunch()
-    train_test_data = Bunch()
-
-    expert_data.sentence, train_test_data.pool = split_data(data.train)
-    expert_data.oracle, train_test_data.test = split_data(data.test)
-
-    data.train.data = train_test_data.pool.train.data
-    data.train.target = train_test_data.pool.train.target
-
-    data.test.data = train_test_data.test.train.data
-    data.test.target = train_test_data.test.train.target
-
     ## convert document to matrix
     data.train.bow = vct.fit_transform(data.train.data)
     data.test.bow = vct.transform(data.test.data)
-
-    #### EXPERT CLASSIFIER: ORACLE
-    print("\nTraining Oracle expert\n"+"-"*40)
-    print("Expert training data in docs: %s" % len(expert_data.oracle.train.data))
-    labels, sent_train, _, _, f1 = split_data_first1sentences(expert_data.oracle.train, sent_detector, vct, limit=0)
-    print("Expert training data in sentences: %s, %s" % (len(labels), len(sent_train)))
-    total = len(labels)
-    print("Sentence distribution with not cleaning (y=1): %.4f" % (1.*np.sum(labels)/len(labels)))
-    print("Number of first sentences: %s" % len(f1))
-    garbage1 = [s for s in f1 if len(s) <= 2]
-
-    print "Garbage in the first sentence: %s" % len(garbage1)
-
-    expert_data.oracle.train.data = sent_train
-    expert_data.oracle.train.target = np.array(labels)
-    expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
-
-    # exp_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    exp_clf = copy.copy(clf)
-    exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
-
-
-    print("\nRemoving 1 character\n"+"-"*40)
-    labels, sent_train, dumped1, dumped_lbl,_ = split_data_first1sentences(expert_data.oracle.train, sent_detector, vct, limit=1)
-    print("Expert training data in sentences: %s, %s" % (len(labels), len(sent_train)))
-    print("Removed sentences: %s" % (total - len(labels)))
-    pred = exp_clf.predict(vct.transform(dumped1))
-    print("Dumped sentence distribution with limit=1 (y=1): %.4f" % (1.*np.sum(dumped_lbl)/len(dumped_lbl)))
-    print "Distribution of dumped by the oracle (y=1): \t%.4f" % (1.*pred.sum()/len(pred))
-    print("\nRemoving 2 Characters\n"+"-"*40)
-    labels, sent_train, dumped2, dumped_lbl,_ = split_data_first1sentences(expert_data.oracle.train, sent_detector, vct, limit=2)
-    print("Expert training data in sentences: %s, %s" % (len(labels), len(sent_train)))
-    print("Removed sentences: %s" % (total - len(labels)))
-    print("Dumped sentence distribution with limit=1 (y=1): %.4f" % (1.*np.sum(dumped_lbl)/len(dumped_lbl)))
-    pred = exp_clf.predict(vct.transform(dumped2))
-    print "Distribution of dumped by the oracle (y=1): \t%.4f" % (1.*pred.sum()/len(pred))
-
-
-
-    #### EXPERT CLASSIFIER: SENTENCES
-    sent_clf = None
-    if False:
-        print("Training sentence expert")
-        labels, sent_train = split_data_first1sentences(expert_data.sentence.train, sent_detector, vct, limit=0)
-
-        expert_data.sentence.train.data = sent_train
-        expert_data.sentence.train.target = np.array(labels)
-        expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
-
-        # if args.cheating:
-        sent_clf = copy.copy(clf)
-        # sent_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-        sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
-
-    return exp_clf, data, vct, cost_model, sent_clf
+    return data
 
 
 ####################### MAIN ####################
-def get_sentences_by_method(pool, student, test_sent):
-    test_sent = []
-
-    list_pool = list(pool.remaining)
-    # indices = rand.permutation(len(pool.remaining))
-    # remaining = [list_pool[index] for index in indices]
-    target_sent = []
-    text_sent = []
-    for i in list_pool:
-        _, sent_bow, sent_txt = student.x_utility(pool.data[i], pool.text[i])
-        if isinstance(test_sent, list):
-            test_sent = sent_bow
-        else:
-            test_sent = vstack([test_sent, sent_bow], format='csr')
-        text_sent.append(sent_txt)
-        target_sent.append(pool.target[i])
-    return test_sent, target_sent, text_sent
-
 from scipy.sparse import diags
 
 
@@ -300,31 +212,55 @@ def main():
 
     clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
 
-    exp_clf, data, vct, cost_model, sent_clf = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
+    data = get_data(args.train, [categories[0]], vct, True)  # expert: classifier, data contains train and test
 
-    print "\nExpert: %s " % exp_clf
+    from collections import Counter
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl
+    import brewer2mpl
+    import itertools
 
-    print ("Sentences scoring")
+    colors_n = itertools.cycle(brewer2mpl.get_map('Paired', 'qualitative', 8).mpl_colors)
+    print "Sentence distribution"
     ### experiment starts
+    X, y, sent_per_doc = split_data_sentences(data, sent_detector, vct, limit=2)
+
+    sent_per_doc = np.array(sent_per_doc)
+    sents = Counter(sent_per_doc)
+
+    mpl.style.use('bmh')
+    n, bins, patches = plt.hist(sents.keys(), weights=sents.values(),  bins=50)#, color=colors_n.next())
+    plt.title("Document Number of Sentence Distribution {0} (mean={1:.2f}) N={2}".format(args.train, sent_per_doc.mean(),
+                                                                                         len(sent_per_doc)),
+              fontsize=14, fontfamily='Aria')
+    plt.xlabel("Number of sentences")
+    plt.ylabel("Frequency")
+    plt.show()
+    for b in bins:
+        print b
 
     print("Elapsed time %.3f" % (time.time() - t0))
 
+def split_data_sentences(data, sent_detector, vct, limit=0):
+    sent_train = []
+    labels = []
+    tokenizer = vct.build_tokenizer()
+    size_per_doc = []
+    print ("Spliting into sentences... Limit:", limit)
+    ## Convert the documents into sentences: train
+    for t, sentences in zip(data.train.target, sent_detector.batch_tokenize(data.train.data)):
 
-def print_document(text_sent, offset, method_name='', top=500, **kwargs):
-    #text_sent, truth=pool.target, prediction=predict, org_doc=pool.text):
-    print "*"*60
-    n = len(text_sent)
-    labels = list(kwargs.keys())
-    labels.append('text_sent')
-    print method_name+"\t", "\t".join(labels)
-    print "*"*60
-    range_docs = range(offset, min(n, offset+top))
-    for i in range_docs:
-        if kwargs is not None:
-            for w in kwargs.values():
-                print w[i], "\t",
-        print text_sent[i].encode('latin1').replace("\n"," ")
+        if limit is None:
+            sents = [s for s in sentences if len(tokenizer(s)) > 1]
+        elif limit > 0:
+            sents = [s for s in sentences if len(s.strip()) > limit]
+            size_per_doc.append(len(sentences))
+        elif limit == 0:
+            sents = [s for s in sentences]
+        sent_train.extend(sents)  # at the sentences separately as individual documents
+        labels.extend([t] * len(sents))  # Give the label of the document to all its sentences
 
+    return labels, sent_train, size_per_doc
 
 
 if __name__ == '__main__':

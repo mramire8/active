@@ -6,7 +6,7 @@ from collections import defaultdict
 import numpy as np
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
-from learner.adaptive_lr import LogisticRegressionAdaptive
+from learner.adaptive_lr import LogisticRegressionAdaptive, LogisticRegressionAdaptiveV2
 import matplotlib.pyplot as plt
 
 from strategy import base_models
@@ -76,6 +76,11 @@ def set_classifier(cl_name, **kwargs):
         if 'parameter' in kwargs:
             c = kwargs['parameter']
         clf = LogisticRegressionAdaptive(penalty="l1", C=c)
+    elif cl_name == "lradaptv2":
+        c = 1
+        if 'parameter' in kwargs:
+            c = kwargs['parameter']
+        clf = LogisticRegressionAdaptiveV2(penalty="l1", C=c)
     else:
         raise ValueError("We need a classifier name for the student [lr|mnb]")
     return clf
@@ -299,11 +304,9 @@ def split_data_sentences(data, sent_detector, vct, limit=0):
     sent_train = []
     labels = []
     tokenizer = vct.build_tokenizer()
-    dump = []
     print ("Spliting into sentences... Limit:", limit)
     ## Convert the documents into sentences: train
     for t, sentences in zip(data.target, sent_detector.batch_tokenize(data.data)):
-        # sents = [s for s in sentences if len(s) > 1]
 
         if limit is None:
             sents = [s for s in sentences if len(tokenizer(s)) > 1]
@@ -311,8 +314,6 @@ def split_data_sentences(data, sent_detector, vct, limit=0):
             sents = [s for s in sentences if len(s.strip()) > limit]
         elif limit == 0:
             sents = [s for s in sentences]
-        dump2 = [s for s in sentences if len(s.strip()) <= limit]
-        dump.extend(dump2)
         sent_train.extend(sents)  # at the sentences separately as individual documents
         labels.extend([t] * len(sents))  # Give the label of the document to all its sentences
 
@@ -388,3 +389,50 @@ def clean_html(data):
     return sent_train
 
 
+def get_student(clf, cost_model, sent_clf, t, vct, args):
+    from strategy import structured
+    cheating = args.cheating
+
+    if args.student in "rnd_sr":
+        student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_max)
+        student.fn_utility = student.utility_rnd
+    elif args.student in "rnd_srre":
+        student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_max)
+        student.fn_utility = student.utility_rnd
+    elif args.student in "rnd_srcs":
+        student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_max)
+        student.fn_utility = student.utility_rnd
+        student.class_sensitive_utility()
+
+    elif args.student in "rnd_srmv":
+        student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_max)
+        student.fn_utility = student.utility_rnd
+        student.majority_vote_utility()
+
+    elif args.student in "rnd_first1":
+        student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_fk)
+        student.fn_utility = student.utility_rnd
+    elif args.student in "rnd_rnd":
+        student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
+                                                     seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_rnd)
+        student.fn_utility = student.utility_rnd
+
+    else:
+        raise ValueError("Oops! We do not know that anytime strategy. Try again.")
+
+    student.set_score_model(clf)  # student classifier
+    student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
+    student.set_cheating(cheating)
+    student.limit = args.limit
+    return student

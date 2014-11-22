@@ -28,6 +28,7 @@ import nltk
 from scipy.sparse import vstack
 from sklearn import metrics
 from learner.adaptive_lr import LogisticRegressionAdaptive
+import matplotlib.pyplot as plt
 
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
@@ -166,7 +167,6 @@ def sentences_average(pool, vct):
     print("Total sentences fragments %s" % sum(counts.values()))
     print("Average size of sentence %s" % (np.mean(words.keys())))
     print("Most common: ", counts.most_common(3))
-    import matplotlib.pyplot as plt
     plt.xlabel("# Sentences")
     plt.ylabel("Frequency")
 
@@ -261,18 +261,19 @@ def get_sentences_by_method(pool, student, test_sent):
     # remaining = [list_pool[index] for index in indices]
     target_sent = []
     text_sent = []
-    scores = []
+    all_scores = []
     order_sent=[]
     for i in list_pool:
-        scores, sent_bow, sent_txt = student.x_utility(pool.data[i], pool.text[i])
+        scores, sent_bow, sent_txt, order = student.x_utility(pool.data[i], pool.text[i])
         if isinstance(test_sent, list):
             test_sent = sent_bow
         else:
             test_sent = vstack([test_sent, sent_bow], format='csr')
         text_sent.append(sent_txt)
         target_sent.append(pool.target[i])
-        # order_sent.append(order)
-    return test_sent, target_sent, text_sent, scores#, order_sent
+        order_sent.append(order)
+        all_scores.append(scores)
+    return test_sent, target_sent, text_sent, all_scores, order_sent
 
 
 def calibrate_scores(n_scores, bounds=(.5,1)):
@@ -342,7 +343,7 @@ def list_to_sparse(selected):
     return test_sent
 
 
-def get_sentences_by_method_cal_scale(pool, student, test_sent):
+def get_sentences_by_method_cal_scale(pool, student, test_sent, class_sensitive=True):
     from sklearn import preprocessing 
     test_sent = []
 
@@ -357,8 +358,8 @@ def get_sentences_by_method_cal_scale(pool, student, test_sent):
     for i in list_pool:
         utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
         all_scores.extend(utilities) ## every score
-        docs.append(sent_bow)  ## sentences for each document
-        text_sent.append(sent_txt)  ## text sentences for each document
+        docs.append(sent_bow[::-1])  ## sentences for each document
+        text_sent.append(sent_txt[::-1])  ## text sentences for each document
         target_sent.append(pool.target[i])   # target of every document, ground truth
         all_p0.extend([student.sent_model.predict_proba(s)[0][0] for s in sent_bow])
     ## Calibrate scores
@@ -372,7 +373,7 @@ def get_sentences_by_method_cal_scale(pool, student, test_sent):
     order = all_p0.argsort()[::-1] ## descending order
     ## generate scores equivalent to max prob
     ordered_p0 = all_p0[order]
-    class_sensitive = False
+    # class_sensitive = True
     if class_sensitive:
         c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
         c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
@@ -424,6 +425,102 @@ def score_top_feat(pool, sent_detector, score_model, vcn):
             test_sent = vstack([test_sent, sent_bow[max_vals]], format='csr')
         target_sent.append(pool.target[i])
     return test_sent, target_sent
+
+
+def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=False, show=False):
+
+    print "Testing size: %s" % len(pool.target)
+    print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
+    # # Sentence dataset
+    train_sent = sent_data.oracle.train
+    import copy
+    ## don't care utility of document
+    student.fn_utility = student.utility_one
+    ## only testing distribution with max score of the student sentence model
+    fns = [student.score_max]
+    # fns = [student.score_rnd]
+    results = defaultdict(lambda: [])
+    for size in sizes:
+
+        # train underlying sentence classifier of the student
+        if not cheating:
+            clf_test = copy.copy(student.sent_model)
+            clf_test.fit(train_sent.bow[:size], train_sent.target[:size])
+            student.set_sentence_model(clf_test)
+
+        clf_test = student.sent_model
+
+        for fn in fns:
+            test_sent = []
+            student.score = fn
+
+            ## for every document pick a sentence
+            if calibrated == 'zscore':
+                test_sent, scores, ori_scores, sel_sent = get_sentences_by_method_cal_scale(pool, student, test_sent)
+                if show:
+                    plot_histogram(sel_sent, "Zcores", show=True)
+            elif calibrated == 'uniform':
+                test_sent, scores, sel_sent = get_sentences_by_method_cal(pool, student, test_sent)
+                if show:
+                    plot_histogram(sel_sent, "Uniform", show=True)
+            else:
+                test_sent, _, _, scores, sel_sent = get_sentences_by_method(pool, student, test_sent)
+                if show:
+                    plot_histogram(sel_sent, calibrated, show=True)
+                # pred_prob = clf_test.predict_proba(test_sent)
+                # scores = pred_prob[:,0]
+
+            predict = clf_test.predict(test_sent)
+            mname = fn.__name__
+            print "-" * 40
+            test_name = "caliball-{}-size-{}".format(mname, size)
+            print test_name
+            if show:
+                plot_histogram([scores[pool.target == 0], scores[pool.target == 1]], test_name, show=False)
+            score_confusion_matrix(pool.target, predict, [0, 1])
+            accu = metrics.accuracy_score(pool.target, predict)
+            print "Accu %s \t%s" % (test_name, accu)
+            results[size].append(sel_sent)
+    return results
+
+
+def other_distribution(exp_clf, fns, pool, sent_clf, student, vct):
+    # # create data for testing method
+    # select the first sentence always
+    print args.train
+    print "Testing size: %s" % len(pool.target)
+    print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
+    student.fn_utility = student.utility_one
+    # clf_test = clf
+    # clf_test.fit(pool.data, pool.target)
+    # student.set_sentence_model(clf_test)
+    clf_test = sent_clf
+    offset = 0
+    for fn in fns:
+        ## firstk
+        test_sent = []
+        student.score = fn
+        test_sent, target_sent, text_sent = get_sentences_by_method(pool, student, test_sent)
+        predict = clf_test.predict(test_sent)
+        pred_prob = clf_test.predict_proba(test_sent)
+        mname = fn.__name__
+        plot_histogram(pred_prob[:, 0], mname)
+        # print "METHOD: %s" % fn.__name__
+
+        if False:
+            print_document(text_sent, offset, method_name=mname, top=500, truth=pool.target,
+                           prediction=predict)  #, org_doc=pool.text)
+        offset += 500
+        # accu = metrics.accuracy_score(pool.target, predict)
+        print mname
+        score_confusion_matrix(pool.target, predict, [0, 1])
+        #print "Accu %s \t%s" % (student.score.__name__, accu)
+    if False:  ## show top feature method
+        test_sent, target_sent = score_top_feat(pool, sent_detector, exp_clf, vct)
+        predict = clf_test.predict(test_sent)
+
+        accu = metrics.accuracy_score(pool.target, predict)
+        print "Accu %s \t%s" % (score_top_feat.__name__, accu)
 
 
 def main():
@@ -490,97 +587,30 @@ def main():
     fns = [student.score_max]
 
     if test_methods:
-        ## create data for testing method
-        # select the first sentence always
-        print args.train
-        print "Testing size: %s" % len(pool.target)
-        print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
+        other_distribution(exp_clf, fns, pool, sent_clf, student, vct)  ## get prob. distribution without calibration
 
-        student.fn_utility = student.utility_one
-
-        # clf_test = clf
-        # clf_test.fit(pool.data, pool.target)
-        # student.set_sentence_model(clf_test)
-        clf_test = sent_clf
-
-        offset = 0
-        for fn in fns:
-            ## firstk
-            test_sent = []
-            student.score = fn
-            test_sent, target_sent, text_sent = get_sentences_by_method(pool, student, test_sent)
-            predict = clf_test.predict(test_sent)
-            pred_prob = clf_test.predict_proba(test_sent)
-            mname = fn.__name__
-            plot_histogram(pred_prob[:,0], mname)
-            # print "METHOD: %s" % fn.__name__
-
-            if False:
-                print_document(text_sent,  offset, method_name=mname, top=500, truth=pool.target, prediction=predict) #, org_doc=pool.text)
-            offset += 500
-            # accu = metrics.accuracy_score(pool.target, predict)
-            print mname
-            score_confusion_matrix(pool.target, predict, [0,1])
-            #print "Accu %s \t%s" % (student.score.__name__, accu)
-
-        if False: ## show top feature method
-            test_sent, target_sent = score_top_feat(pool, sent_detector, exp_clf, vct)
-            predict = clf_test.predict(test_sent)
-
-            accu = metrics.accuracy_score(pool.target, predict)
-            print "Accu %s \t%s" % (score_top_feat.__name__, accu)
-
-    ## get prob. distribution without calibration
-    calibrated = 'none'
+    calibrated = 'random'
+    results = []
     if test_distribution:
+        from collections import Counter
         ## create data for testing method
         # select the first sentence always
-        print args.train
+        # for i in range(5):
+        for cal in ['uniform', 'zscore']:
+            results.append(score_distribution(calibrated, pool, sent_data, student, [1], cheating=True))
+        avg = Counter()
+        for r in results:
+            c = Counter(r[1][0])
+            for k,v in c.iteritems():
+                avg[k] += v/10.
 
-        print "Testing size: %s" % len(pool.target)
-        print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
+        plt.hist(avg.keys(), weights=avg.values(), bins=100, align='mid', alpha=.65)
+        plt.title("Random Distributions t=10", fontsize=12)
+        plt.xlabel("Sentence Location")
+        plt.ylabel("Frequency")
+        plt.legend()
+        plt.show()
 
-        ## Sentence dataset
-        train_sent = sent_data.oracle.train
-        import copy
-        ## don't care utility of document
-        student.fn_utility = student.utility_one
-        ## only testing distribution with max score of the student sentence model
-        fns = [student.score_max]
-        sizes = [1]
-        for size in sizes:
-
-            # train underlying sentence classifier of the student
-            # clf_test = copy.copy(clf)
-            # clf_test.fit(train_sent.bow[:size], train_sent.target[:size])
-            # student.set_sentence_model(clf_test)
-            clf_test = student.sent_model
-            for fn in fns:
-                test_sent = []
-                student.score = fn
-
-                ## for every document pick a sentence
-                if calibrated == 'zscore':
-                    test_sent, scores, ori_scores, sel_sent = get_sentences_by_method_cal_scale(pool, student, test_sent)
-                    # plot_histogram(sel_sent, "Zcores", show=True)
-                elif calibrated == 'uniform':
-                    test_sent, scores, sel_sent = get_sentences_by_method_cal(pool, student, test_sent)
-                    # plot_histogram(sel_sent, "Uniform", show=True)
-                else:
-                    test_sent, _, _, scores = get_sentences_by_method(pool, student, test_sent)
-                    # plot_histogram(sel_sent, "None", show=True)
-                    # pred_prob = clf_test.predict_proba(test_sent)
-                    # scores = pred_prob[:,0]
-
-                predict = clf_test.predict(test_sent)
-                mname = fn.__name__
-                print "-"*40
-                test_name = "caliball-{}-size-{}".format(mname, size)
-                print test_name
-                plot_histogram([scores[pool.target == 0], scores[pool.target==1]], test_name, show=False)
-                score_confusion_matrix(pool.target, predict, [0,1])
-                accu = metrics.accuracy_score(pool.target, predict)
-                print "Accu %s \t%s" % (test_name, accu)
 
     print "Elapsed time %.3f" % (time.time() - t0)
 
@@ -595,7 +625,6 @@ def score_confusion_matrix(true_labels, predicted, labels):
 
 
 def plot_histogram(values, title, show=False):
-    import matplotlib.pyplot as plt
 
     n, bins, patches = plt.hist(values, stacked=True, bins=100, align='mid',label=['y=0', 'y=1'], alpha=.65)
 

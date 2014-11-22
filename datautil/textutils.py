@@ -12,3 +12,17 @@ class StemTokenizer(object):
     def __call__(self, doc):
         #return [self.wnl.stem(t) for t in word_tokenize(doc)]
         return [self.wnl.stem(t) for t in self.mytokenizer.tokenize(doc)]
+
+
+class TwitterSentenceTokenizer(object):
+    def __init__(self):
+        pass
+
+    def batch_tokenize(self, twitter_objs):
+        return twitter_objs
+
+    def tokenize(self, twitter_objs):
+        return twitter_objs
+
+    def __call__(self, twitter_objs):
+        return twitter_objs

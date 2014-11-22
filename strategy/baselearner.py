@@ -36,10 +36,12 @@ class BaseLearner(object):
         :param train_labels: target values
         :return: trained classifier
         '''
-        clf = copy.copy(self.current_model)
+
         if train_data is not None:
-            clf.fit(train_data, train_labels)
-        return clf
+            self.current_model.fit(train_data, train_labels)
+        else:
+            self.current_model = copy.copy(self.current_model)
+        return self.current_model
 
     def predict_cost(self, picked=None):
         return self.cost_model.cost_function(picked)

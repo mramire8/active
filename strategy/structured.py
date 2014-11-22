@@ -289,7 +289,7 @@ class AALStructuredReading(AnytimeLearner):
         for i in remaining[:self.subpool]:
             # data_point = candidates[i]
 
-            utility, sent_max, text = self.x_utility(pool.data[i], pool.text[i])
+            utility, sent_max, text, _ = self.x_utility(pool.data[i], pool.text[i])
             sent_text.append(text)
             uncertainty.append([utility, sent_max])
 
@@ -304,7 +304,7 @@ class AALStructuredReading(AnytimeLearner):
 
     def pick_next_cal(self, pool=None, step_size=1):
         from sklearn import preprocessing
-
+        import time
         list_pool = list(pool.remaining)
         indices = self.randgen.permutation(len(pool.remaining))
         remaining = [list_pool[index] for index in indices]
@@ -312,27 +312,26 @@ class AALStructuredReading(AnytimeLearner):
         if self.subpool is None:
             self.subpool = len(pool.remaining)
 
-        target_sent = []
         text_sent = []
         all_scores = []
         all_p0 = []
         docs = []
         unc_utility = []
+        t0 = time.time()
         for i in remaining[:self.subpool]:
             unc_utility.append(self.fn_utility(pool.data[i]))
             utilities, sent_bow, sent_txt = self.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
             all_scores.extend(utilities) ## every score
             docs.append(sent_bow)  ## sentences for each document list of list
             text_sent.append(sent_txt)  ## text sentences for each document
-            target_sent.append(pool.target[i])   # target of every document, ground truth
-            all_p0.extend([self.sent_model.predict_proba(s)[0][0] for s in sent_bow])
+            all_p0 = np.concatenate((all_p0, utilities))
 
         ## Calibrate scores
         n = len(all_scores)
         if n != len(all_p0):
             raise Exception("Oops there is something wrong! We don't have the same size")
 
-        all_p0 = np.array(all_p0)
+        # all_p0 = np.array(all_p0)
 
         order = all_p0.argsort()[::-1] ## descending order
         ## generate scores equivalent to max prob
@@ -340,27 +339,23 @@ class AALStructuredReading(AnytimeLearner):
         c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
         c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
         a = np.concatenate((c0_scores, c1_scores))
-
         new_scores = np.zeros(n)
         new_scores[order] = a
         cal_scores = self._reshape_scores(new_scores, docs)
-        p0 = self._reshape_scores(all_p0, docs)
-
+        # p0 = self._reshape_scores(all_p0, docs)
+        print new_scores.max()
         selected_sent = [np.argmax(row) for row in cal_scores]  # get the sentence index of the highest score per document
         selected = [docs[i][k] for i, k in enumerate(selected_sent)]  # get the bow of the sentences with the highest score
-        selected_score = [np.max(row) for i, row in enumerate(cal_scores)]  ## get the max utility score per document
-        selected_cl = [p0[i][k] for i, k in enumerate(selected_sent)]  # p0 of the highest sentence
+        selected_score = [np.max(row) for row in cal_scores]  ## get the max utility score per document
         test_sent = list_to_sparse(selected)  # bow of each sentence selected
         selected_text = [text_sent[i][k] for i,k in enumerate(selected_sent)]
-        ## pick document-sentence
 
+        ## pick document-sentence
         joint = np.array(unc_utility) * selected_score
         final_order = joint.argsort()[::-1]
-
         chosen = [[remaining[x], test_sent[x]] for x in final_order[:int(step_size)]]  #index and k of chosen
         chosen_text = [selected_text[x] for x in final_order[:int(step_size)]]
         #todo: human vs simulated expert
-
         return chosen#, chosen_text
 
     def _calibrate_scores(self, n_scores, bounds=(.5,1)):
@@ -375,7 +370,7 @@ class AALStructuredReading(AnytimeLearner):
         return calibrated
 
 
-    def _reshape_scores(self, scores, sent_mat):
+    def _reshape_scores2(self, scores, sent_mat):
         """
         Reshape scores to have the same structure as the list of list sent_mat
         :param scores: one dimensional array of scores
@@ -391,6 +386,22 @@ class AALStructuredReading(AnytimeLearner):
                 i = i+1
             sr.append(sc)
         return np.array(sr)
+
+    def _reshape_scores(self, scores, sent_mat):
+        """
+        Reshape scores to have the same structure as the list of list sent_mat
+        :param scores: one dimensional array of scores
+        :param sent_mat: list of lists
+        :return: narray : reshaped scores
+        """
+        sr = []
+        i = 0
+        lengths = np.array([d.shape[0] for d in sent_mat])
+        lengths = lengths.cumsum()
+        for j in lengths:
+            sr.append(scores[i:j])
+            i = j
+        return sr
 
 
     def utility_base(self, instance):
@@ -424,20 +435,20 @@ class AALStructuredReading(AnytimeLearner):
 
         utility_sorted = utility[order]
         # print utility_sorted[0], util_score
-        return utility_sorted[0], sentences_indoc[order[0]], sent_text[order[0]]#, order[0]
+        return utility_sorted[0], sentences_indoc[order[0]], sent_text[order[0]], order[0]
 
     def x_utility_cal(self, instance, instance_text):
 
         sentences_indoc, sent_text = self.getk(instance_text)
         self.counter = 0
         self.curret_doc = instance
-        utility = np.array([self.score(xik) for xik in sentences_indoc])
+        # utility = np.array([self.score(xik) for xik in sentences_indoc])
+        utility = self.score(sentences_indoc)
 
         order = np.argsort(utility, axis=0)[::-1]  ## descending order
 
         utility_sorted = utility[order]
-        # print utility_sorted[0], util_score
-        return utility_sorted, [sentences_indoc[o] for o in order], [sent_text[o] for o in order]
+        return utility_sorted, sentences_indoc[order], np.array(sent_text)[order]
 
     def score_base(self, sentence):
         """
@@ -456,20 +467,44 @@ class AALStructuredReading(AnytimeLearner):
 
         if self.sent_model is not None:  ## if the model has been built yet
             pred = self.sent_model.predict_proba(sentence)
-            return pred.max()
+            if sentence.shape[0] == 1:
+                return pred.max()
+            else:
+                return pred.max(axis=1)
         return 1.0
 
+    def score_p0(self, sentence):
+        """
+        Return the score for the sentences, as the confidence of the sentence classifier maxprob value
+        :param sentence: feature vector of sentences
+        :return: confidence score
+        """
+
+        if self.sent_model is not None:  ## if the model has been built yet
+            pred = self.sent_model.predict_proba(sentence)
+            if sentence.shape[0] == 1:
+                return pred[0]
+            else:
+                return pred[:,0]
+        return np.array([1.0] * sentence.shape[0])
+
     def score_rnd(self, sentence):
-        return self.randgen.random_sample()
+        if sentence.shape[0] ==1:
+            return self.randgen.random_sample()
+        else:
+            return self.randgen.random_sample(sentence.shape[0])
 
     def score_fk(self, sentence):
-        self.counter += 1
-        if self.counter == 1:
-            return 1.0
+        if sentence.shape[0] ==1:
+            self.counter += 1
+            if self.counter == 1:
+                return 1.0
+            else:
+                return 0.0
+                # self.counter -= 1
+                # return self.counter
         else:
-            return 0.0
-            # self.counter -= 1
-            # return self.counter
+            return np.array([1] + [0]*(sentence.shape[0]-1))
 
     def getk(self, text):
         if not isinstance(text, list):
@@ -492,21 +527,24 @@ class AALStructuredReading(AnytimeLearner):
     def train_all(self, train_data=None, train_labels=None, sent_train=None, sent_labels=None):
         ## update underlying classifier
         ## update sentence classifier
-        clf = super(AnytimeLearner, self).train(train_data=train_data, train_labels=train_labels)
-        self.model = clf
+
+        self.model = super(AnytimeLearner, self).train(train_data=train_data, train_labels=train_labels)
 
         if not self.cheating:
             self.sent_model = self.update_sentence(sent_train, sent_labels)
 
-        return clf
+        return self.model
 
     def update_sentence(self, sent_train, sent_labels):
-        try:
-            clf = copy.copy(self.base_neutral)
-            clf.fit(sent_train, sent_labels)
-        except ValueError:
-            clf = None
-        return clf
+        # try:
+        #     clf = copy.copy(self.base_neutral)
+        #     clf.fit(sent_train, sent_labels)
+        # except ValueError:
+        #     clf = None
+        # return clf
+        if self.sent_model is None:
+            self.sent_model = copy.copy(self.base_neutral)
+        self.sent_model.fit(sent_train, sent_labels)
 
     def set_cheating(self, cheat):
         self.cheating = cheat
@@ -696,7 +734,7 @@ class AALTFEStructuredReading(AALStructuredReading):
         for i in remaining[:self.subpool]:
             # data_point = candidates[i]
 
-            utility, sent_max, text = self.x_utility(pool.data[i], pool.text[i])
+            utility, sent_max, text, _ = self.x_utility(pool.data[i], pool.text[i])
             pc = self.sent_model.predict(sent_max)
             # print pc
             pred_class.append(pc)

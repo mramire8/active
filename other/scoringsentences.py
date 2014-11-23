@@ -305,11 +305,14 @@ def get_sentences_by_method_cal(pool, student, test_sent):
     all_scores = []
     docs = []
     for i in list_pool:
-        utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
-        all_scores.extend(utilities) ## every score
-        docs.append(sent_bow)  ## sentences for each document
-        text_sent.append(sent_txt)  ## text sentences for each document
-        target_sent.append(pool.target[i])   # target of every document, ground truth
+        if len(pool.text[i].strip()) == 0:
+            pass
+        else:
+            utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
+            all_scores.extend(utilities) ## every score
+            docs.append(sent_bow)  ## sentences for each document
+            text_sent.append(sent_txt)  ## text sentences for each document
+            target_sent.append(pool.target[i])   # target of every document, ground truth
 
     ## Calibrate scores
     n = len(all_scores)
@@ -356,12 +359,15 @@ def get_sentences_by_method_cal_scale(pool, student, test_sent, class_sensitive=
     all_p0 = []
     docs = []
     for i in list_pool:
-        utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
-        all_scores.extend(utilities) ## every score
-        docs.append(sent_bow[::-1])  ## sentences for each document
-        text_sent.append(sent_txt[::-1])  ## text sentences for each document
-        target_sent.append(pool.target[i])   # target of every document, ground truth
-        all_p0.extend([student.sent_model.predict_proba(s)[0][0] for s in sent_bow])
+        if len(pool.text[i]) == 0:
+            pass
+        else:
+            utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
+            all_scores.extend(utilities) ## every score
+            docs.append(sent_bow)  ## sentences for each document
+            text_sent.append(sent_txt)  ## text sentences for each document
+            target_sent.append(pool.target[i])   # target of every document, ground truth
+            all_p0.extend([student.sent_model.predict_proba(s)[0][0] for s in sent_bow])
     ## Calibrate scores
 
     n = len(all_scores)
@@ -374,10 +380,23 @@ def get_sentences_by_method_cal_scale(pool, student, test_sent, class_sensitive=
     ## generate scores equivalent to max prob
     ordered_p0 = all_p0[order]
     # class_sensitive = True
+    from sys import maxint
+    upper = .5
+    lower = .5
     if class_sensitive:
-        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
-        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
-        a = np.concatenate((c0_scores, c1_scores))
+        if upper is not .5:
+            c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= upper])
+            c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+            mid = len(ordered_p0) - ((ordered_p0 >= upper).sum() + (ordered_p0 <= lower).sum())
+            middle = np.array([-maxint]*mid)
+            print "Threshold:", lower, upper
+            print "middle:", len(middle)
+            a = np.concatenate((c0_scores, middle,c1_scores))
+        else:
+            c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > upper])
+            c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+            print "Threshold:", lower, upper
+            a = np.concatenate((c0_scores, c1_scores))
     else:
         a = preprocessing.scale(ordered_p0)
 
@@ -427,7 +446,7 @@ def score_top_feat(pool, sent_detector, score_model, vcn):
     return test_sent, target_sent
 
 
-def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=False, show=False):
+def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=False, show=False, oracle=None):
 
     print "Testing size: %s" % len(pool.target)
     print "Class distribution: %s" % (1. * pool.target.sum() / len(pool.target))
@@ -456,6 +475,7 @@ def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=Fal
 
             ## for every document pick a sentence
             if calibrated == 'zscore':
+                student.set_sent_score(student.score_p0)
                 test_sent, scores, ori_scores, sel_sent = get_sentences_by_method_cal_scale(pool, student, test_sent)
                 if show:
                     plot_histogram(sel_sent, "Zcores", show=True)
@@ -480,6 +500,10 @@ def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=Fal
             score_confusion_matrix(pool.target, predict, [0, 1])
             accu = metrics.accuracy_score(pool.target, predict)
             print "Accu %s \t%s" % (test_name, accu)
+
+            if not cheating:
+                ora_pred = oracle.predict(test_sent)
+                score_confusion_matrix(pool.target, ora_pred, [0, 1])
             results[size].append(sel_sent)
     return results
 
@@ -589,6 +613,9 @@ def main():
     if test_methods:
         other_distribution(exp_clf, fns, pool, sent_clf, student, vct)  ## get prob. distribution without calibration
 
+    import matplotlib as mlp
+    mlp.style.use('bmh')
+
     calibrated = 'random'
     results = []
     if test_distribution:
@@ -596,16 +623,22 @@ def main():
         ## create data for testing method
         # select the first sentence always
         # for i in range(5):
-        for cal in ['uniform', 'zscore']:
-            results.append(score_distribution(calibrated, pool, sent_data, student, [1], cheating=True))
-        avg = Counter()
-        for r in results:
-            c = Counter(r[1][0])
-            for k,v in c.iteritems():
-                avg[k] += v/10.
+        calibrated = ['uniform', 'zscore']
+        for cal in calibrated:
+            print cal
+            results.append(score_distribution(cal, pool, sent_data, student, [1000, 3000, 5000, 10000], cheating=True, oracle=exp_clf))
 
-        plt.hist(avg.keys(), weights=avg.values(), bins=100, align='mid', alpha=.65)
-        plt.title("Random Distributions t=10", fontsize=12)
+        #
+        # avg = Counter()
+        # for r in results:
+        #     c = Counter(r[1][0])
+        #     for k,v in c.iteritems():
+        #         avg[k] += v/10.
+
+        # plt.hist(avg.keys(), weights=avg.values(), bins=100, align='mid', alpha=.65)
+        plt.hist([results[0][1][0], results[1][1][0]], bins=range(100), fill=True,  histtype='step',
+                 align='mid', alpha=.65, label=calibrated)
+        plt.title("Distribution Sentence Location", fontsize=12)
         plt.xlabel("Sentence Location")
         plt.ylabel("Frequency")
         plt.legend()

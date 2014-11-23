@@ -336,9 +336,14 @@ class AALStructuredReading(AnytimeLearner):
         order = all_p0.argsort()[::-1] ## descending order
         ## generate scores equivalent to max prob
         ordered_p0 = all_p0[order]
-        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
-        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
-        a = np.concatenate((c0_scores, c1_scores))
+        from sys import maxint
+        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= .6])
+        middle = np.array([-maxint]*((ordered_p0< .4).sum() + (ordered_p0 < .6).sum()))
+        print "middle:", len(middle)
+        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .4])
+        a = np.concatenate((c0_scores,middle, c1_scores))
+
+
         new_scores = np.zeros(n)
         new_scores[order] = a
         cal_scores = self._reshape_scores(new_scores, docs)
@@ -444,7 +449,8 @@ class AALStructuredReading(AnytimeLearner):
         self.curret_doc = instance
         # utility = np.array([self.score(xik) for xik in sentences_indoc])
         utility = self.score(sentences_indoc)
-
+        if len(sent_text) <=1:
+            utility = np.array([utility])
         order = np.argsort(utility, axis=0)[::-1]  ## descending order
 
         utility_sorted = utility[order]
@@ -483,7 +489,7 @@ class AALStructuredReading(AnytimeLearner):
         if self.sent_model is not None:  ## if the model has been built yet
             pred = self.sent_model.predict_proba(sentence)
             if sentence.shape[0] == 1:
-                return pred[0]
+                return pred[0][0]
             else:
                 return pred[:,0]
         return np.array([1.0] * sentence.shape[0])
@@ -544,7 +550,7 @@ class AALStructuredReading(AnytimeLearner):
         # return clf
         if self.sent_model is None:
             self.sent_model = copy.copy(self.base_neutral)
-        self.sent_model.fit(sent_train, sent_labels)
+        return self.sent_model.fit(sent_train, sent_labels)
 
     def set_cheating(self, cheat):
         self.cheating = cheat

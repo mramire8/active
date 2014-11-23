@@ -33,7 +33,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="twitter",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -143,13 +143,13 @@ ap.add_argument('--calibrate',
 
 args = ap.parse_args()
 rand = np.random.mtrand.RandomState(args.seed)
-sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
+# sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 
 print args
 print
 
 
-def sentences_average(pool, vct):
+def sentences_average(pool, vct, sent_detector):
     ## COMPUTE: AVERAGE SENTENCES IN DOCUMENTS
     tk = vct.build_tokenizer()
     allwords = 0.
@@ -290,7 +290,7 @@ def get_student(clf, cost_model, sent_clf, t, vct):
     return student
 
 
-def update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct):
+def update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct, sent_detector):
     """`
     Add to P_S all the sentences in the documents with the label of the document
     :param neutral_data:
@@ -564,7 +564,7 @@ def main():
             #TODO: get the sentence data ready for training
             # if not student.get_cheating():  #prepapre the data to update P_S
 
-            neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct)
+            neu_x, neu_y, neutral_data = update_sentence(neutral_data, neu_x, neu_y, labels, query_index, pool, vct, sent_detector)
 
             # neu_x, neu_y, neutral_data = update_sentence_query(neutral_data, neu_x, neu_y, query, labels)
 

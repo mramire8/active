@@ -140,11 +140,14 @@ X, y, sent_per_doc = split_data_sentences(data, sent_detector, vct, limit=2)
 
 # ## Sentence Distribution per Document
 # 
-# The following graph is the distribution of number of sentences per document in the training split fo the data. Size of the bin is one and there are 100 bins. 
+# The following graph is the distribution of number of sentences per document in the training split fo the data. Size of
+# the bin is one and there are 100 bins.
 # 
 # **Note:**
 # 
-# Most of the data has less than 20 sentences (average=18.7). Few documents have one, two and three sentences (~500 documents)
+# Most of the data has less than 20 sentences (average=18.7). Few documents have one, two and three sentences
+#
+# (~500 documents)
 
 # <codecell>
 
@@ -158,7 +161,8 @@ distribution_per_sentence("imdb", sent_per_doc)
 # 
 # **Note:**
 # 
-# The documents of class y=1 seem to have less number of sentences ($\bar{x_0}=18.9 > \bar{x_1}=17.5 $), however the difference is only two sentences at the most. 
+# The documents of class y=1 seem to have less number of sentences ($\bar{x_0}=18.9 > \bar{x_1}=17.5 $), however the
+# difference is only two sentences at the most.
 
 # <codecell>
 

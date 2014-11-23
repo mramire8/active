@@ -26,10 +26,11 @@ if "nt" in os.name:
     IMDB_HOME = 'C:/Users/mramire8/Documents/Research/Oracle confidence and Interruption/dataset/aclImdb/raw-data'
     AVI_HOME  = 'C:/Users/mramire8/Documents/Research/Oracle confidence and Interruption/dataset/sraa/sraa/sraa/partition1/data'
     # AVI_HOME  = 'C:/Users/mramire8/Documents/Research/Oracle confidence and Interruption/dataset/sraa/sraa/sraa/partition1/dummy'
+    TWITTER_HOME="C:/Users/mramire8/Documents/Datasets/twitter"
 else:
     IMDB_HOME = '/Users/maru/Dataset/aclImdb'
     AVI_HOME  = '/Users/maru/Dataset/aviation/data'
-
+    TWITTER_HOME="/Users/maru/Dataset/twitter"
 
 def keep_header_subject(text, keep_subject=False):
     """
@@ -157,6 +158,174 @@ def load_aviation(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorize
 
     return data
 
+
+
+## convert the tweet into a data format of text documents
+# from sklearn.datasets.base import Bunch
+
+def preprocess(string, lowercase, collapse_urls, collapse_mentions):
+    import re
+    if not string:
+        return ""
+    if lowercase:
+        string = string.lower()
+#     tokens = []
+    if collapse_urls:
+        string = re.sub('http\S+', 'THIS_IS_A_URL', string)
+    if collapse_mentions:
+        string = re.sub('@\S+', 'THIS_IS_A_MENTION', string)
+#     if prefix:
+#         tokens = ['%s%s' % (prefix, t) for t in tokens]
+    return string
+
+def timeline_to_doc(user, *args):
+    tweets = []
+    for tw in user:
+        tweets.append(preprocess(tw['text'], *args))
+    return tweets
+
+def user_to_doc(users, *args):
+    timeline = []
+    user_names = []
+    user_id = []
+
+    for user in users:
+        timeline.append(timeline_to_doc(user, *args))
+        user_names.append(user[0]['user']['name'])
+        user_id.append(user[0]['user']['screen_name'])
+    return user_id, user_names, timeline
+
+
+def bunch_users(class1, class2, vct, lowercase, collapse_urls, collapse_mentions, rnd, class_name=None):
+    labels = None
+    if labels is None:
+        labels = [0,1]
+
+    user_id, user_names, timeline = user_to_doc(class1, lowercase, collapse_urls, collapse_mentions)
+    user_id2, user_names2, timeline2 = user_to_doc(class2, lowercase, collapse_urls, collapse_mentions)
+    target = [labels[0]] * len(user_id)
+    user_id.extend(user_id2)
+    user_names.extend(user_names2)
+    timeline.extend(timeline2)
+    target.extend([labels[1]]* len(user_id2))
+    user_text = [". ".join(t) for t in timeline]
+    data = bunch.Bunch(data=user_text, target=target, user_id=user_id,
+                       user_name=user_names, user_timeline=timeline)
+
+    # data = {'data':timeline, 'target':np.array(target), 'user_id':user_id, 'user_name':user_names, 'user_text':user_text}
+
+
+    random_state = np.random.RandomState(rnd)
+
+    indices = np.arange(len(data.target))
+    random_state.shuffle(indices)
+    data.target = np.array(data.target)[indices]
+    data_lst = np.array(data.data, dtype=object)
+    data_lst = data_lst[indices]
+    data.data = data_lst.tolist()
+    data.user_id = np.array(data.user_id)[indices]
+    data.user_name = np.array(data.user_name)[indices]
+    data.user_timeline = np.array(data.user_timeline)[indices]
+    data.target_names = class_name
+    return data
+
+import datetime
+
+
+def get_date(date_str):
+
+    return datetime.datetime.strptime(date_str.strip('"'), "%a %b %d %H:%M:%S +0000 %Y")
+
+
+def convert_tweet_2_data(data_path, vct, rnd):
+    """
+    Convert tweet time lines into dataset
+    :param data_path:
+    :param vct:
+    :return: bunch.Bunch
+        Bunch with the data in train and test from twitter bots and human accounts
+    """
+    good = get_tweets_file(data_path + "/good.json")
+    print "Real users %s" % (len(good))
+
+    bots = get_tweets_file(data_path + "/bots.json")
+    print "Bot users %s" % (len(bots))
+
+    gds = [g for g in good if get_date(g[0]['created_at']).year > 2013]
+    bts = [b for b in bots if get_date(b[0]['created_at']).year > 2013]
+
+    data = bunch_users(gds,bts, vct, True, False, False, rnd, class_name=['good', 'bots'])
+
+    return data
+
+
+def get_tweets_file(path):
+
+    f = open(path)
+
+    i = 0
+    users = []
+    data=[]
+    last = 0
+    for line in f:
+        data = line.split("]][[")
+        last = len(data)
+
+    for i,tweets in enumerate(data):
+            if i == 0:
+                t = json.loads(tweets[1:] + "]")
+            elif i == (last-1):
+                t = json.loads("["+tweets[:-1])
+            else:
+                t = json.loads("["+tweets+"]")
+            users.append(t)
+
+    return users
+
+
+def load_twitter(path, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False, percent=.5):
+    """
+    load text files from twitter data
+    :param path: path of the root directory of the data
+    :param subset: what data will be loaded, train or test or all
+    :param shuffle:
+    :param rnd: random seed value
+    :param vct: vectorizer
+    :return: :raise ValueError:
+    """
+
+    data = bunch.Bunch()
+
+    if subset in ('train', 'test'):
+        raise Exception("We are not ready for train test aviation data yet")
+    elif subset == "all":
+        data = convert_tweet_2_data(TWITTER_HOME, vct, rnd)
+    else:
+        raise ValueError(
+            "subset can only be 'train', 'test' or 'all', got '%s'" % subset)
+
+    indices = ShuffleSplit(len(data.data), n_iter=1, test_size=percent, random_state=rnd)
+    for train_ind, test_ind in indices:
+
+        data = bunch.Bunch(train=bunch.Bunch(data=[data.data[i] for i in train_ind], target=data.target[train_ind],
+                                             target_names=data.target_names),
+                           test=bunch.Bunch(data=[data.data[i] for i in test_ind], target=data.target[test_ind],
+                                            target_names=data.target_names))
+    # if shuffle:
+    #     random_state = np.random.RandomState(rnd)
+    #     indices = np.arange(data.train.target.shape[0])
+    #     random_state.shuffle(indices)
+    #     data.train.target = data.train.target[indices]
+    #     # Use an object array to shuffle: avoids memory copy
+    #     data_lst = np.array(data.train.data, dtype=object)
+    #     data_lst = data_lst[indices]
+    #     data.train.data = data_lst.tolist()
+
+    if not raw:
+        data = process_data(data, fix_k, min_size, vct)
+
+    return data
+
 ARXIV_HOME = 'C:/Users/mramire8/Documents/Datasets/arxiv'
 def load_arxiv(path, categories=None, subset="all", shuffle=True, rnd=2356, vct=CountVectorizer(), fix_k=None, min_size=None, raw=False, percent=.5):
     """
@@ -237,8 +406,6 @@ def process_data(data, fix_k, min_size, vct, silent=True):
     fixk.target = data.train.target
     print "Minimum size: %s" % min_size if silent else ""
     if min_size is not None:
-        # filtered = np.array([(x, y, z) for x, y, z in zip(data.train.data, fixk.kwords, fixk.target)
-        # if len(x.split(" "))>= min_size])
         filtered = [(x, y, z) for x, y, z in zip(data.train.data, fixk.kwords, fixk.target)
                              if len(analizer(x)) >= min_size]
 
@@ -252,8 +419,6 @@ def process_data(data, fix_k, min_size, vct, silent=True):
     print "Vectorizing ..."  if silent else ""
     # add the target values
     # add a field for the vectorized data
-    # data.train.bow = vct.fit_transform(fixk.train)  # add a field for the vectorized data
-    #data.train.bow = vct.fit_transform(data.train.data)  # add a filed for vectorized test
     data.train.data = fixk.all  # raw documents
 
     try:
@@ -312,6 +477,10 @@ def load_dataset(name, fixk, categories, vct, min_size, raw=False, percent=.5):
     elif "biocreative" in name:
         # raise Exception("We are not ready for that data yet")
         data = load_biocreative(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
+                         fix_k=fixk, raw=raw, percent=percent)
+    elif "twitter" in name:
+        # raise Exception("We are not ready for that data yet")
+        data = load_twitter(name, shuffle=True, rnd=2356, vct=vct, min_size=min_size,
                          fix_k=fixk, raw=raw, percent=percent)
     elif "dummy" in name:
         ########## DUMMY DATA###########

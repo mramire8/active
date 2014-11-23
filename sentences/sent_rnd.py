@@ -35,7 +35,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="20news",
+                default="twitter",
                 help='training data (libSVM format)')
 
 
@@ -135,9 +135,14 @@ ap.add_argument('--seed',
 ap.add_argument('--cheating',
                 action="store_true",
                 help='experiment cheating version - study purposes')
+
 ap.add_argument('--calibrate',
                 action="store_true",
                 help='calibrate student sentence classifier scores for SR')
+
+ap.add_argument('--full-oracle',
+                action="store_true",
+                help='train oracle on all data')
 
 args = ap.parse_args()
 rand = np.random.RandomState(args.seed)
@@ -372,7 +377,7 @@ def main():
                       ['physics.comp-ph','physics.data-an']]
         categories=categories[0]
 
-    min_size = 10
+    min_size = None
 
     args.fixk = None
 

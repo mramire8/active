@@ -435,4 +435,7 @@ def get_student(clf, cost_model, sent_clf, t, vct, args):
     student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
     student.set_cheating(cheating)
     student.limit = args.limit
+    if args.calibrate:
+        student.set_sent_score(student.score_p0)
+        student.calibratescores = True
     return student

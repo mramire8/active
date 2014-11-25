@@ -821,6 +821,7 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
         # self.fn_utility = self.utility_one  # document score
         self.first_k = fk
         self.human_mode = False
+        self.calibratescores = False
 
     def pick_next(self, pool=None, step_size=1):
         list_pool = list(pool.remaining)
@@ -858,9 +859,71 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
         :param pool:
         :return:
         '''
-        chosen = [[index, self.x_utility(pool.data[index], pool.text[index])] for index in chosen_x]
+        if not self.calibratescores:
+            chosen = [[index, self.x_utility(pool.data[index], pool.text[index])] for index in chosen_x]
+        else:
+            chosen = self.pick_next_sentence_cal(chosen_x, pool)
 
         return chosen
+
+    def pick_next_sentence_cal(self, chosen_x, pool):
+        from sklearn import preprocessing
+
+        list_pool = list(pool.remaining)
+        indices = self.randgen.permutation(len(pool.remaining))
+        remaining = [list_pool[index] for index in indices]
+
+        if self.subpool is None:
+            self.subpool = len(pool.remaining)
+        remaining = list(set(remaining[:self.subpool]) | set(chosen_x))
+
+        text_sent = []
+        all_scores = []
+        all_p0 = []
+        docs = []
+        unc_utility = []
+
+        for i in remaining:
+            utilities, sent_bow, sent_txt = self.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
+            all_scores.extend(utilities) ## every score
+            docs.append(sent_bow)  ## sentences for each document list of list
+            text_sent.append(sent_txt)  ## text sentences for each document
+            all_p0 = np.concatenate((all_p0, utilities))
+
+        ## Calibrate scores
+        n = len(all_scores)
+        if n != len(all_p0):
+            raise Exception("Oops there is something wrong! We don't have the same size")
+
+
+        order = all_p0.argsort()[::-1] ## descending order
+        ## generate scores equivalent to max prob
+        ordered_p0 = all_p0[order]
+        from sys import maxint
+
+        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
+        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
+
+        a = np.concatenate((c0_scores, c1_scores))
+
+
+        new_scores = np.zeros(n)
+        new_scores[order] = a
+        cal_scores = self._reshape_scores(new_scores, docs)
+        # p0 = self._reshape_scores(all_p0, docs)
+        print new_scores.max()
+        selected_sent = [np.argmax(row) for row in cal_scores]  # get the sentence index of the highest score per document
+        selected = [docs[i][k] for i, k in enumerate(selected_sent)]  # get the bow of the sentences with the highest score
+        selected_score = [np.max(row) for row in cal_scores]  ## get the max utility score per document
+        test_sent = list_to_sparse(selected)  # bow of each sentence selected
+        selected_text = [text_sent[i][k] for i,k in enumerate(selected_sent)]
+
+        ## pick document-sentence
+        chosen = [[remaining[x], test_sent[x]] for x in remaining if x in chosen_x]
+        chosen_text = [selected_text[x] for x in remaining if x in chosen_x]
+
+        #todo: human vs simulated expert
+        return chosen#, chosen_text
 
 
     def x_utility(self, instance, instance_text):

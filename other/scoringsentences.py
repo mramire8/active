@@ -614,8 +614,8 @@ def main():
     if sent_average:
         print sentences_average(pool, vct)
 
-    fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
-    fns = [student.score_max]
+    # fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
+    # fns = [student.score_max]
 
     if test_methods:
         other_distribution(exp_clf, fns, pool, sent_clf, student, vct)  ## get prob. distribution without calibration
@@ -638,6 +638,8 @@ def main():
             print "="*40
             print cal
             print "="*40
+            if cal == 'zscore':
+                student.
             loc, sco = score_distribution(cal, pool, sent_data, student, all_sizes,
                                           cheating=False, oracle=exp_copy)
             sent_loc.append(loc)
@@ -665,8 +667,8 @@ def main():
 
         for s in all_sizes:
             plt.clf()
-            plt.hist(sent_sco[0][s][0], bins=np.arange(-2,5, .25), #fill=True,  histtype='step',
-                     align='mid', alpha=.65, label=[calibrated[0]+"-"+str(s)])
+            plt.hist([sent_sco[0][s][0],sent_sco[1][s][0]], bins=100, #fill=True,  histtype='step',
+                     align='mid', alpha=.65, label=calibrated)
             plt.title("Distribution Sentence Score - $|L|=${}".format(s), fontsize=12)
             plt.xlabel("Sentence Scores")
             plt.ylabel("Frequency")

@@ -1,0 +1,8 @@
+# ignore the pickle files
+*.p
+*.tar.gz
+*.zip
+*.tar
+*.pdf
+*.txt
+*.pyc

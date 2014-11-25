@@ -207,8 +207,8 @@ def bunch_users(class1, class2, vct, lowercase, collapse_urls, collapse_mentions
     user_id.extend(user_id2)
     user_names.extend(user_names2)
     timeline.extend(timeline2)
-    target.extend([labels[1]]* len(user_id2))
-    user_text = [". ".join(t) for t in timeline]
+    target.extend([labels[1]] * len(user_id2))
+    user_text = ["######".join(t) for t in timeline]
     data = bunch.Bunch(data=user_text, target=target, user_id=user_id,
                        user_name=user_names, user_timeline=timeline)
 
@@ -254,7 +254,7 @@ def convert_tweet_2_data(data_path, vct, rnd):
     gds = [g for g in good if get_date(g[0]['created_at']).year > 2013]
     bts = [b for b in bots if get_date(b[0]['created_at']).year > 2013]
 
-    data = bunch_users(gds,bts, vct, True, False, False, rnd, class_name=['good', 'bots'])
+    data = bunch_users(gds,bts, vct, True, True, True, rnd, class_name=['good', 'bots'])
 
     return data
 

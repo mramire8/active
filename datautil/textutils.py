@@ -19,10 +19,10 @@ class TwitterSentenceTokenizer(object):
         pass
 
     def batch_tokenize(self, twitter_objs):
-        return twitter_objs
+        return [sent.split("######") for sent in twitter_objs]
 
     def tokenize(self, twitter_objs):
-        return twitter_objs
+        return twitter_objs.split("######")
 
     def __call__(self, twitter_objs):
         return twitter_objs

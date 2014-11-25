@@ -337,11 +337,22 @@ class AALStructuredReading(AnytimeLearner):
         ## generate scores equivalent to max prob
         ordered_p0 = all_p0[order]
         from sys import maxint
-        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= .6])
-        middle = np.array([-maxint]*((ordered_p0< .4).sum() + (ordered_p0 < .6).sum()))
-        print "middle:", len(middle)
-        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .4])
-        a = np.concatenate((c0_scores,middle, c1_scores))
+
+        upper = .75
+        lower = .25
+        if upper is not .5:
+            c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= upper])
+            c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+            mid = len(ordered_p0) - ((ordered_p0 >= upper).sum() + (ordered_p0 <= lower).sum())
+            middle = np.array([-maxint]*mid)
+            print "Threshold:", lower, upper
+            print "middle:", len(middle)
+            a = np.concatenate((c0_scores, middle,c1_scores))
+        else:
+            c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > upper])
+            c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+            print "Threshold:", lower, upper
+            a = np.concatenate((c0_scores, c1_scores))
 
 
         new_scores = np.zeros(n)

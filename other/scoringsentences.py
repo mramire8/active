@@ -27,8 +27,9 @@ import random
 import nltk
 from scipy.sparse import vstack
 from sklearn import metrics
-from learner.adaptive_lr import LogisticRegressionAdaptive
+from learner.adaptive_lr import LogisticRegressionAdaptive, LogisticRegressionAdaptiveV2
 import matplotlib.pyplot as plt
+import copy
 
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
@@ -131,13 +132,11 @@ args = ap.parse_args()
 rand = np.random.mtrand.RandomState(args.seed)
 sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 
-print args
-print
-
 
 def print_features(coef, names):
     """ Print sorted list of non-zero features/weights. """
     print "\n".join('%s/%.2f' % (names[j], coef[j]) for j in np.argsort(coef)[::-1] if coef[j] != 0)
+
 
 def sentences_average(pool, vct): 
    ## COMPUTE: AVERAGE SENTENCES IN DOCUMENTS
@@ -176,9 +175,8 @@ def sentences_average(pool, vct):
     plt.show()
 
 
-
 def get_data(clf, train, cats, fixk, min_size, vct, raw):
-    import copy
+
     min_size = 10
 
     args.fixk = None
@@ -381,8 +379,8 @@ def get_sentences_by_method_cal_scale(pool, student, test_sent, class_sensitive=
     ordered_p0 = all_p0[order]
     # class_sensitive = True
     from sys import maxint
-    upper = .5
-    lower = .5
+    upper = .75
+    lower = .25
     if class_sensitive:
         if upper is not .5:
             c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= upper])
@@ -411,7 +409,8 @@ def get_sentences_by_method_cal_scale(pool, student, test_sent, class_sensitive=
     selected_cl = [p0[i][k] for i, k in enumerate(selected_sent)]
     test_sent = list_to_sparse(selected)
 
-    return test_sent, np.array(selected_score), selected_cl, selected_sent
+    # return test_sent, np.array(selected_score), selected_cl, selected_sent
+    return test_sent, a[a != -maxint ], selected_cl, selected_sent
 
 from scipy.sparse import diags
 
@@ -459,6 +458,7 @@ def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=Fal
     fns = [student.score_max]
     # fns = [student.score_rnd]
     results = defaultdict(lambda: [])
+    score_results = defaultdict(lambda: [])
     for size in sizes:
 
         # train underlying sentence classifier of the student
@@ -477,16 +477,16 @@ def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=Fal
             if calibrated == 'zscore':
                 student.set_sent_score(student.score_p0)
                 test_sent, scores, ori_scores, sel_sent = get_sentences_by_method_cal_scale(pool, student, test_sent)
-                if show:
-                    plot_histogram(sel_sent, "Zcores", show=True)
+                # if show:
+                #     plot_histogram(sel_sent, "Zcores", show=True)
             elif calibrated == 'uniform':
                 test_sent, scores, sel_sent = get_sentences_by_method_cal(pool, student, test_sent)
-                if show:
-                    plot_histogram(sel_sent, "Uniform", show=True)
+                # if show:
+                #     plot_histogram(sel_sent, "Uniform", show=True)
             else:
                 test_sent, _, _, scores, sel_sent = get_sentences_by_method(pool, student, test_sent)
-                if show:
-                    plot_histogram(sel_sent, calibrated, show=True)
+                # if show:
+                #     plot_histogram(sel_sent, calibrated, show=True)
                 # pred_prob = clf_test.predict_proba(test_sent)
                 # scores = pred_prob[:,0]
 
@@ -504,8 +504,10 @@ def score_distribution(calibrated, pool, sent_data, student, sizes, cheating=Fal
             if not cheating:
                 ora_pred = oracle.predict(test_sent)
                 score_confusion_matrix(pool.target, ora_pred, [0, 1])
+                print "Oracle Accu %s \t%s" % (test_name, metrics.accuracy_score(pool.target, ora_pred))
             results[size].append(sel_sent)
-    return results
+            score_results[size].append(scores)
+    return results, score_results
 
 
 def other_distribution(exp_clf, fns, pool, sent_clf, student, vct):
@@ -548,6 +550,8 @@ def other_distribution(exp_clf, fns, pool, sent_clf, student, vct):
 
 
 def main():
+    print args
+    print
     test_methods = False
     test_distribution = True
     sent_average = False
@@ -574,10 +578,13 @@ def main():
         args.fixk = None
 
     # clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    clf = LogisticRegressionAdaptive(penalty='l1', C=1)
-
+    clf = LogisticRegressionAdaptiveV2(penalty='l1', C=1)
+    from sklearn.base import clone
     exp_clf, data, vct, cost_model, sent_clf, sent_data = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
     print "\nExpert: %s " % exp_clf
+
+    exp_copy = LogisticRegressionAdaptiveV2(penalty='l1', C=1, class_weight={0:.5, 1:.5})
+    exp_copy.fit(sent_data.oracle.train.bow, sent_data.oracle.train.target)
 
     print ("Sentences scoring")
     t0 = time.time()
@@ -616,19 +623,27 @@ def main():
     import matplotlib as mlp
     mlp.style.use('bmh')
 
+
     calibrated = 'random'
-    results = []
+    sent_loc, sent_sco = [], []
     if test_distribution:
         from collections import Counter
         ## create data for testing method
         # select the first sentence always
         # for i in range(5):
         calibrated = ['uniform', 'zscore']
+        calibrated = ['zscore']
+        all_sizes = [2000, 5000, 10000, 20000]
         for cal in calibrated:
+            print "="*40
             print cal
-            results.append(score_distribution(cal, pool, sent_data, student, [1000, 3000, 5000, 10000], cheating=True, oracle=exp_clf))
+            print "="*40
+            loc, sco = score_distribution(cal, pool, sent_data, student, all_sizes,
+                                          cheating=False, oracle=exp_copy)
+            sent_loc.append(loc)
+            sent_sco.append(sco)
 
-        #
+        # for random graph
         # avg = Counter()
         # for r in results:
         #     c = Counter(r[1][0])
@@ -636,16 +651,186 @@ def main():
         #         avg[k] += v/10.
 
         # plt.hist(avg.keys(), weights=avg.values(), bins=100, align='mid', alpha=.65)
-        plt.hist([results[0][1][0], results[1][1][0]], bins=range(100), fill=True,  histtype='step',
-                 align='mid', alpha=.65, label=calibrated)
-        plt.title("Distribution Sentence Location", fontsize=12)
-        plt.xlabel("Sentence Location")
-        plt.ylabel("Frequency")
-        plt.legend()
-        plt.show()
+        if False:
+            for s in all_sizes:
+                plt.clf()
+                plt.hist([sent_loc[0][s][0], sent_loc[1][s][0]], bins=range(60), fill=True,  histtype='step',
+                         align='mid', alpha=.65, label=calibrated)
+                plt.title("Distribution Sentence Location - $|L|=${}".format(s), fontsize=12)
+                plt.xlabel("Sentence Location")
+                plt.ylabel("Frequency")
+                plt.legend()
+                plt.savefig("location-student-{}.png".format(s), bbox_inches="tight", dpi=200, transparent=True)
+                # plt.show()
+
+        for s in all_sizes:
+            plt.clf()
+            plt.hist(sent_sco[0][s][0], bins=np.arange(-2,5, .25), #fill=True,  histtype='step',
+                     align='mid', alpha=.65, label=[calibrated[0]+"-"+str(s)])
+            plt.title("Distribution Sentence Score - $|L|=${}".format(s), fontsize=12)
+            plt.xlabel("Sentence Scores")
+            plt.ylabel("Frequency")
+            plt.legend()
+            plt.savefig("score-student-{}.png".format(s), bbox_inches="tight", dpi=200, transparent=True)
+            # plt.show()
 
 
     print "Elapsed time %.3f" % (time.time() - t0)
+
+def sentence_scores_debug():
+    print args
+    print
+
+    vct = TfidfVectorizer(encoding='latin1', min_df=5, max_df=1.0, binary=False, ngram_range=(1, 1),
+                      token_pattern='\\b\\w+\\b')  #, tokenizer=StemTokenizer())
+
+    print("Start loading ...")
+
+    ########## NEWS GROUPS ###############
+    # easy to hard. see "Less is More" paper: http://axon.cs.byu.edu/~martinez/classes/678/Presentations/Clawson.pdf
+    categories = [['alt.atheism', 'talk.religion.misc'],
+                  ['comp.graphics', 'comp.windows.x'],
+                  ['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware'],
+                  ['rec.sport.baseball', 'sci.crypt']]
+
+    min_size = max(10, args.fixk)
+    args.fixk = None
+
+    clf = LogisticRegressionAdaptiveV2(penalty='l1', C=1)
+    exp_clf, data, vct, cost_model, sent_clf, sent_data = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
+    print "\nExpert: %s " % exp_clf
+
+    exp_copy = LogisticRegressionAdaptiveV2(penalty='l1', C=1, class_weight={0:.5, 1:.5})
+    exp_copy.fit(sent_data.oracle.train.bow, sent_data.oracle.train.target)
+
+    print ("Sentences scoring")
+    t0 = time.time()
+
+    ### experiment starts
+    student = structured.AALStructuredReading(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
+                                              subpool=250, cost_model=cost_model)
+    student.set_score_model(exp_clf)  # expert model
+    student.set_sentence_model(sent_clf)  # expert sentence model
+    student.limit = 2
+    print "Expert: :", exp_clf
+    print "Sentence:", sent_clf
+
+
+    pool = Bunch()
+    pool.data = data.train.bow.tocsr()   # full words, for training
+    pool.text = data.train.data
+    pool.target = data.train.target
+    pool.predicted = []
+    pool.remaining = range(pool.data.shape[0])  # indices of the pool
+
+    train_sent = sent_data.oracle.train
+
+
+    fns = [student.score_max]
+
+    sent_loc, sent_sco = [], []
+
+    for i in range(5):
+
+        size=5000
+
+        rand2 = np.random.mtrand.RandomState(i*4325)
+        indices = rand2.permutation(len(pool.remaining))
+
+        clf = LogisticRegressionAdaptiveV2(penalty='l1', C=1)
+
+        clf.fit(train_sent.bow[:size], train_sent.target[:size])
+        student.set_sent_score(student.score_p0)
+        student.set_sentence_model(clf)
+
+        print "-" * 40
+        print "Trial:", i
+
+        print_calibration(pool, student, exp_clf, subpool=250)
+
+    print "Elapsed time %.3f" % (time.time() - t0)
+
+
+def calibrate_zscore(all_p0):
+    from sklearn import preprocessing
+
+    order = all_p0.argsort()[::-1]  # # descending order
+    # # generate scores equivalent to max prob
+    ordered_p0 = all_p0[order]
+    # class_sensitive = True
+    from sys import maxint
+
+    upper = .5
+    lower = .5
+    if upper is not .5:
+        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= upper])
+        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+        mid = len(ordered_p0) - ((ordered_p0 >= upper).sum() + (ordered_p0 <= lower).sum())
+        middle = np.array([-maxint] * mid)
+        a = np.concatenate((c0_scores, middle, c1_scores))
+    else:
+        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > upper])
+        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+        a = np.concatenate((c0_scores, c1_scores))
+    return a,  order
+
+
+def print_calibration(pool, student, oracle, subpool=None):
+
+    list_pool = list(pool.remaining)
+    indices = rand.permutation(len(pool.remaining))
+    remaining = [list_pool[index] for index in indices]
+    target_sent = []
+    text_sent = []
+    all_scores = []
+    all_p0 = []
+    docs = []
+    ora_pred = []
+
+    if subpool is None:
+        subpool = 1000
+
+    for i in remaining[:subpool]:
+        if len(pool.text[i]) == 0:
+            pass
+        else:
+            utilities, sent_bow, sent_txt = student.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
+            all_scores.extend(utilities)         # every score
+            docs.append(sent_bow)                # sentences for each document
+            text_sent.append(sent_txt)           # text sentences for each document
+            target_sent.append(pool.target[i])   # target of every document, ground truth
+            all_p0.extend([student.sent_model.predict_proba(s)[0][0] for s in sent_bow])
+            ora_pred.append(oracle.predict(sent_bow))
+    ## Calibrate scores
+    n = len(all_scores)
+    if n != len(all_p0):
+        raise Exception("Oops there is something wrong! We don't have the same size")
+
+    all_p0 = np.array(all_p0)
+
+    a, order = calibrate_zscore(all_p0)
+
+    new_scores = np.zeros(n)
+    new_scores[order] = a
+    cal_scores = reshape_scores(new_scores, docs)
+    p0 = reshape_scores(all_p0, docs)
+
+    ranked_score = [np.argsort(np.argsort(row)[::-1]) for row in cal_scores]  # get the bow
+
+    orig_scores = all_p0
+    orig_scores[orig_scores < .5] = 1-orig_scores[orig_scores<.5]
+    noncalib_scores = reshape_scores(orig_scores, docs)
+    ranked_noncalib = [np.argsort(np.argsort(row)[::-1]) for row in noncalib_scores]
+    print "SENTID\tDOCID\tSCORE\tRANK\tCALSCORE\tCALRANK\tORAPRED\tTRUELABEL\tPy0"
+    for i in range(len(remaining[:subpool])):
+        for j in range(len(text_sent[i])):
+            print "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}".format(j, remaining[i],
+                            noncalib_scores[i][j],ranked_noncalib[i][j],
+                            cal_scores[i][j], ranked_score[i][j],
+                            ora_pred[i][j], pool.target[remaining[i]], p0[i][j])
+
+    return True
+
 
 
 def score_confusion_matrix(true_labels, predicted, labels):
@@ -689,6 +874,6 @@ def print_document(text_sent, offset, method_name='', top=500, **kwargs):
         # print "-"*60
 
 if __name__ == '__main__':
-    main()
-
+    # main()
+    sentence_scores_debug()
 

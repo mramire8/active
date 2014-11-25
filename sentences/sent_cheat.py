@@ -10,12 +10,11 @@ sys.path.append(os.path.abspath("."))
 sys.path.append(os.path.abspath("../"))
 sys.path.append(os.path.abspath("../experiment/"))
 
-from experiment import experiment_utils
+from experiment.experiment_utils import *
 import argparse
 import numpy as np
 from sklearn.datasets.base import Bunch
 from datautil.load_data import load_from_file, split_data
-from sklearn import linear_model
 import time
 from sklearn import metrics
 from strategy import randomsampling, structured
@@ -26,8 +25,7 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import nltk
 from scipy.sparse import vstack
 from datautil.textutils import TwitterSentenceTokenizer
-# import re
-# from scipy.sparse import diags
+
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
@@ -177,22 +175,7 @@ def sentences_average(pool, vct, sent_detector):
     print("Average size of sentence %s" % (average_words / allwords))
 
 
-####################### MAIN ####################
-
-
-def split_data_sentences(data, sent_detector, vct=CountVectorizer()):
-    sent_train = []
-    labels = []
-    tokenizer = vct.build_tokenizer()
-
-    print ("Splitting into sentences...")
-    ## Convert the documents into sentences: train
-    for t, sentences in zip(data.target, sent_detector.batch_tokenize(data.data)):
-        sents = [s for s in sentences if len(tokenizer(s)) > 1]
-        sent_train.extend(sents)  # at the sentences separately as individual documents
-        labels.extend([t] * len(sents))  # Give the label of the document to all its sentences
-    return labels, sent_train
-
+###################### MAIN ####################
 
 def get_student(clf, cost_model, sent_clf, t, vct):
     cheating = args.cheating
@@ -228,41 +211,12 @@ def get_student(clf, cost_model, sent_clf, t, vct):
                                                      subpool=250, cost_model=cost_model)
         student.set_sent_score(student.score_fk_max)
 
-    # elif args.student in "rnd_sr_tfe":
-    #     student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
-    #                                                  seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
-    #     student.set_sent_score(student.score_max)
-    #     student.fn_utility = student.utility_rnd
-    #
-    # elif args.student in "rnd_firstkmax_tfe":
-    #     student = structured.AALRandomThenSR(model=clf, accuracy_model=None, budget=args.budget,
-    #                                                  seed=args.seed, vcn=vct, subpool=250, cost_model=cost_model)
-    #     student.set_sent_score(student.score_fk_max)
-    #     student.fn_utility = student.utility_rnd
-    #
-    # elif args.student in "rnd":
-    #     # student = structured.AALStructuredReadingRandomK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed, vcn=vct,
-    #     #                                    subpool=250, cost_model=cost_model)
-    #     # student.set_score_model(clf)  # student classifier
-    #     # student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
-    #     raise ValueError("RND sentences selection is not available yet.")
-
     elif args.student in "sr_seq":
         student = structured.AALUtilityThenSR_Max(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
                                                   vcn=vct, subpool=250, cost_model=cost_model)
     elif args.student in "sr_seq_tfe":
         student = structured.AALTFEUtilityThenSR_Max(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
                                                      vcn=vct, subpool=250, cost_model=cost_model)
-
-    # elif args.student in "rnd_max":
-    #     student = structured.AALRandomReadingMax(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
-    #                                              vcn=vct, subpool=250, cost_model=cost_model)
-    #
-    #
-    # elif args.student in "rnd_firstk":
-    #     student = structured.AALRandomReadingFK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
-    #                                             vcn=vct, subpool=250, cost_model=cost_model)
-    #
 
     elif args.student in "firstk_seq":
         student = structured.AALUtilityThenSR_Firstk(model=clf, accuracy_model=None, budget=args.budget,
@@ -380,11 +334,11 @@ def main():
     print("Data %s" % args.train)
     print("Data size %s" % len(data.train.data))
 
-    parameters = experiment_utils.parse_parameters_mat(args.cost_model)
+    parameters = parse_parameters_mat(args.cost_model)
 
     print "Cost Parameters %s" % parameters
 
-    cost_model = experiment_utils.set_cost_model(args.cost_function, parameters=parameters)
+    cost_model = set_cost_model(args.cost_function, parameters=parameters)
     print "\nCost Model: %s" % cost_model.__class__.__name__
 
     ### SENTENCE TRANSFORMATION
@@ -394,8 +348,8 @@ def main():
         sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 
     ## delete <br> to "." to recognize as end of sentence
-    data.train.data = experiment_utils.clean_html(data.train.data)
-    data.test.data = experiment_utils.clean_html(data.test.data)
+    data.train.data = clean_html(data.train.data)
+    data.test.data = clean_html(data.test.data)
 
     print("Train:{}, Test:{}, {}".format(len(data.train.data), len(data.test.data), data.test.target.shape[0]))
     ## Get the features of the sentence dataset
@@ -426,7 +380,7 @@ def main():
     expert_data.oracle.train.target = np.array(labels)
     expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
 
-    exp_clf = experiment_utils.set_classifier(args.classifier, parameter=args.expert_penalty)
+    exp_clf = set_classifier(args.classifier, parameter=args.expert_penalty)
     exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
 
     if "neutral" in args.expert:
@@ -452,11 +406,11 @@ def main():
 
     sent_clf = None
     if args.cheating:
-        sent_clf = experiment_utils.set_classifier(args.classifier, parameter=args.expert_penalty)
+        sent_clf = set_classifier(args.classifier, parameter=args.expert_penalty)
         sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
     #### STUDENT CLASSIFIER
-    clf = experiment_utils.set_classifier(args.classifier, parameter=args.expert_penalty)
+    clf = set_classifier(args.classifier, parameter=args.expert_penalty)
     # clf = set_classifier(args.classifier)
 
 
@@ -626,14 +580,14 @@ def main():
                  iteration, len(train_indices)-bootstrap_size,1.*oracle_answers / (len(train_indices)-bootstrap_size))
         #end trial loop
     if args.cost_function not in "uniform":
-        accuracies = experiment_utils.extrapolate_trials(tac, cost_25=parameters[1][1], step_size=args.step_size)
-        aucs = experiment_utils.extrapolate_trials(tau, cost_25=parameters[1][1], step_size=args.step_size)
+        accuracies = extrapolate_trials(tac, cost_25=parameters[1][1], step_size=args.step_size)
+        aucs = extrapolate_trials(tau, cost_25=parameters[1][1], step_size=args.step_size)
     print "\nAverage oracle accuracy: ", np.array(oracle_accuracies).mean()
     print("Elapsed time %.3f" % (time.time() - t0))
     cheating = "CHEATING" if args.cheating else "NOCHEAT"
-    experiment_utils.print_extrapolated_results(accuracies, aucs, file_name=args.train+"-"+cheating+"-"+args.student)
+    print_extrapolated_results(accuracies, aucs, file_name=args.train+"-"+cheating+"-"+args.student)
     # experiment_utils.oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.student)
-    experiment_utils.oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student, cm=ora_cm, num_trials=args.trials)
+    oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student, cm=ora_cm, num_trials=args.trials)
 
 
 def format_query(query_labels):

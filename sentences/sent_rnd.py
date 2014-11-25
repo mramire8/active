@@ -13,14 +13,12 @@ sys.path.append(os.path.abspath("../experiment/"))
 from experiment.experiment_utils import *
 from datautil.load_data import load_from_file, split_data
 from datautil.textutils import StemTokenizer
-from strategy import randomsampling, structured
+from strategy import structured
 from expert import baseexpert
 import numpy as np
 from numpy.random import RandomState
 from sklearn import metrics
 from sklearn.datasets.base import Bunch
-from sklearn import linear_model
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from scipy.sparse import vstack
 # import random
@@ -28,8 +26,9 @@ import argparse
 import nltk
 import time
 from collections import defaultdict
-# import re
-# from scipy.sparse import diags
+
+from datautil.textutils import TwitterSentenceTokenizer
+
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
@@ -140,7 +139,7 @@ ap.add_argument('--calibrate',
                 action="store_true",
                 help='calibrate student sentence classifier scores for SR')
 
-ap.add_argument('--full-oracle',
+ap.add_argument('--fulloracle',
                 action="store_true",
                 help='train oracle on all data')
 
@@ -228,6 +227,8 @@ def get_student(clf, cost_model, sent_clf, t, vct):
     student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
     student.set_cheating(cheating)
     student.limit = args.limit
+    if args.calibrate:
+        student.set_sent_score(student.score_p0)
     return student
 
 
@@ -296,13 +297,6 @@ def update_sentence_threhold(neutral_data, neu_x, neu_y, labels, query_index, po
 
             surviving_sent = [sent for pred, sent in zip(pred_sent, doc_sentences) if lbl is pred]
 
-            # if student.sent_model is None:  # in the first iteration, add all
-            #     confidence = [True] * len(subinstances)
-            # else:
-            #     confidence = [student.sent_model.predict_proba(s).max() > args.neutral_threshold
-            #                   for s in doc_sentences]
-            # print len(confidence)
-
             for xik in surviving_sent: #,  confidence:
 
                 # if confident:
@@ -355,8 +349,6 @@ def main():
 
     vct = TfidfVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=False, ngram_range=(1, 1),
                           token_pattern='\\b\\w+\\b', tokenizer=StemTokenizer())
-    # vct = CountVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=True, ngram_range=(1, 1),
-    #                       token_pattern='\\b\\w+\\b', tokenizer=StemTokenizer())
 
     print("Start loading ...")
     # data fields: data, bow, file_names, target_names, target
@@ -394,7 +386,10 @@ def main():
     print "\nCost Model: %s" % cost_model.__class__.__name__
 
     ### SENTENCE TRANSFORMATION
-    sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
+    if args.train == "twitter":
+        sent_detector = TwitterSentenceTokenizer()
+    else:
+        sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 
     ## delete <br> to "." to recognize as end of sentence
     data.train.data = clean_html(data.train.data)
@@ -405,16 +400,17 @@ def main():
 
     ## create splits of data: pool, test, oracle, sentences
     expert_data = Bunch()
-    train_test_data = Bunch()
+    if not args.fulloracle:
+        train_test_data = Bunch()
 
-    expert_data.sentence, train_test_data.pool = split_data(data.train)
-    expert_data.oracle, train_test_data.test = split_data(data.test)
+        expert_data.sentence, train_test_data.pool = split_data(data.train)
+        expert_data.oracle, train_test_data.test = split_data(data.test)
 
-    data.train.data = train_test_data.pool.train.data
-    data.train.target = train_test_data.pool.train.target
+        data.train.data = train_test_data.pool.train.data
+        data.train.target = train_test_data.pool.train.target
 
-    data.test.data = train_test_data.test.train.data
-    data.test.target = train_test_data.test.train.target
+        data.test.data = train_test_data.test.train.data
+        data.test.target = train_test_data.test.train.target
 
     ## convert document to matrix
     data.train.bow = vct.fit_transform(data.train.data)
@@ -422,16 +418,27 @@ def main():
 
     #### EXPERT CLASSIFIER: ORACLE
     print("Training Oracle expert")
-    print "Training expert documents:%s" % len(expert_data.oracle.train.data)
-    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=args.limit)
-
-    expert_data.oracle.train.data = sent_train
-    expert_data.oracle.train.target = np.array(labels)
-    expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
-
-    # exp_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
     exp_clf = set_classifier(args.classifier, parameter=args.expert_penalty)
-    exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
+
+    if not args.fulloracle:
+        print "Training expert documents:%s" % len(expert_data.oracle.train.data)
+        labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=args.limit)
+
+        expert_data.oracle.train.data = sent_train
+        expert_data.oracle.train.target = np.array(labels)
+        expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
+
+        exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
+    else:
+        expert_data.data = np.concatenate((data.train.data, data.test.data))
+        expert_data.target = np.concatenate((data.train.target, data.test.target))
+        expert_data.target_names = data.train.target_names
+        labels, sent_train = split_data_sentences(expert_data, sent_detector, vct, limit=args.limit)
+        expert_data.bow = vct.transform(sent_train)
+        expert_data.target = labels
+        expert_data.data = sent_train
+        exp_clf.fit(expert_data.bow, expert_data.target)
+
 
     if "neutral" in args.expert:
         expert = baseexpert.NeutralityExpert(exp_clf, threshold=args.neutral_threshold,
@@ -450,23 +457,19 @@ def main():
 
     #### EXPERT CLASSIFIER: SENTENCES
     print("Training sentence expert")
-    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=args.limit)
-
-    expert_data.sentence.train.data = sent_train
-    expert_data.sentence.train.target = np.array(labels)
-    expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
 
     sent_clf = None
     if args.cheating:
+        labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=args.limit)
+
+        expert_data.sentence.train.data = sent_train
+        expert_data.sentence.train.target = np.array(labels)
+        expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
         sent_clf = set_classifier(args.classifier, parameter=args.expert_penalty)
         sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
     #### STUDENT CLASSIFIER
-    # clf = linear_model.LogisticRegression(penalty="l1", C=args.expert_penalty)
     clf = set_classifier(args.classifier, parameter=args.expert_penalty)
-    # alpha = 1
-    # clf = MultinomialNB(alpha=alpha)
-    # clf = set_classifier(args.classifier)
 
 
     print "\nStudent Classifier: %s" % clf

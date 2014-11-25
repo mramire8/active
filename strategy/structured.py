@@ -462,10 +462,11 @@ class AALStructuredReading(AnytimeLearner):
         utility = self.score(sentences_indoc)
         if len(sent_text) <=1:
             utility = np.array([utility])
-        order = np.argsort(utility, axis=0)[::-1]  ## descending order
-
-        utility_sorted = utility[order]
-        return utility_sorted, sentences_indoc[order], np.array(sent_text)[order]
+        # order = np.argsort(utility, axis=0)[::-1]  ## descending order
+        #
+        # utility_sorted = utility[order]
+        # return utility_sorted, sentences_indoc[order], np.array(sent_text)[order]
+        return utility, sentences_indoc, np.array(sent_text)
 
     def score_base(self, sentence):
         """

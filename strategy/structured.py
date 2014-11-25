@@ -338,8 +338,8 @@ class AALStructuredReading(AnytimeLearner):
         ordered_p0 = all_p0[order]
         from sys import maxint
 
-        upper = .75
-        lower = .25
+        upper = .5
+        lower = .5
         if upper is not .5:
             c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= upper])
             c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])

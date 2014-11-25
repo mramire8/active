@@ -632,7 +632,7 @@ def main():
         # select the first sentence always
         # for i in range(5):
         calibrated = ['uniform', 'zscore']
-        calibrated = ['zscore']
+        # calibrated = ['zscore']
         all_sizes = [2000, 5000, 10000, 20000]
         for cal in calibrated:
             print "="*40
@@ -651,7 +651,7 @@ def main():
         #         avg[k] += v/10.
 
         # plt.hist(avg.keys(), weights=avg.values(), bins=100, align='mid', alpha=.65)
-        if False:
+        if True:
             for s in all_sizes:
                 plt.clf()
                 plt.hist([sent_loc[0][s][0], sent_loc[1][s][0]], bins=range(60), fill=True,  histtype='step',
@@ -874,6 +874,6 @@ def print_document(text_sent, offset, method_name='', top=500, **kwargs):
         # print "-"*60
 
 if __name__ == '__main__':
-    # main()
-    sentence_scores_debug()
+    main()
+    # sentence_scores_debug()
 

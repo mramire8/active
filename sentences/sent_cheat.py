@@ -15,6 +15,7 @@ import argparse
 import numpy as np
 from sklearn.datasets.base import Bunch
 from datautil.load_data import load_from_file, split_data
+from datautil.textutils import StemTokenizer
 import time
 from sklearn import metrics
 from strategy import randomsampling, structured
@@ -313,7 +314,7 @@ def main():
     x_axis = defaultdict(lambda: [])
 
     vct = TfidfVectorizer(encoding='ISO-8859-1', min_df=1, max_df=1.0, binary=False, ngram_range=(1, 2),
-                          token_pattern='\\b\\w+\\b')  #, tokenizer=StemTokenizer())
+                          token_pattern='\\b\\w+\\b', tokenizer=StemTokenizer())
 
     print("Start loading ...")
     # data fields: data, bow, file_names, target_names, target
@@ -374,7 +375,7 @@ def main():
     #### EXPERT CLASSIFIER: ORACLE
     print("Training Oracle expert")
 
-    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector)
+    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=2)
 
     expert_data.oracle.train.data = sent_train
     expert_data.oracle.train.target = np.array(labels)
@@ -398,7 +399,7 @@ def main():
 
     #### EXPERT CLASSIFIER: SENTENCES
     print("Training sentence expert")
-    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector)
+    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=2)
 
     expert_data.sentence.train.data = sent_train
     expert_data.sentence.train.target = np.array(labels)

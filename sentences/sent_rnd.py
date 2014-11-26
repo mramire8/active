@@ -147,8 +147,6 @@ args = ap.parse_args()
 rand = np.random.RandomState(args.seed)
 sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 
-print args
-print
 
 
 def sentences_average(pool, vct):
@@ -336,6 +334,9 @@ def update_sentence_query(neutral_data, neu_x, neu_y, query, labels):
 
 
 def main():
+    print args
+    print
+
     accuracies = defaultdict(lambda: [])
 
     ora_accu = defaultdict(lambda: [])

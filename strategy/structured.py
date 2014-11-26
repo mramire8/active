@@ -862,7 +862,8 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
         if not self.calibratescores:
             chosen = [[index, self.x_utility(pool.data[index], pool.text[index])] for index in chosen_x]
         else:
-            chosen = self.pick_next_sentence_cal(chosen_x, pool)
+            sent_chosen = self.pick_next_sentence_cal(chosen_x, pool)
+            chosen = [[index, sent_bow, pool.text[index]] for index, sent_bow in sent_chosen]
 
         return chosen
 

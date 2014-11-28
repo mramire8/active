@@ -13,4 +13,12 @@ To run IMDB data with uniform cost LR-Adapt, SR method, 1250 budget after bootst
 ``` 
 
 Important parameters:
+
+```
 ./sr_cali.sh    **name_train_data**   cost_values    cost_function   threshold   **classifier_penalty**  step_size   bootstrap   budget   max_iterations   prefix_file_name method_name cheating_method output_folder **classifier_name** cleaning_min **calibration**
+```
+
+* name_train_data: possible values: imdb, aviation
+* classifier_penality: scalar
+* classifier_name: possible values: lr, lrl2, lradapt, lradaptv2, mnb
+* calibration: if we need SR to calibrate using z-scores use --calibrate flag

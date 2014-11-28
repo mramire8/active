@@ -71,6 +71,11 @@ def set_classifier(cl_name, **kwargs):
         if 'parameter' in kwargs:
             c = kwargs['parameter']
         clf = LogisticRegression(penalty="l1", C=c)
+    elif cl_name == "lrl2":
+        c = 1
+        if 'parameter' in kwargs:
+            c = kwargs['parameter']
+        clf = LogisticRegression(penalty="l2", C=c)
     elif cl_name == "lradapt":
         c = 1
         if 'parameter' in kwargs:

@@ -57,6 +57,7 @@ ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
                 default='sr',
+                choises=['sr', 'fixkSR'],
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--trials',
@@ -105,7 +106,7 @@ ap.add_argument('--classifier',
                 metavar='STUDENT_MODEL',
                 type=str,
                 default='lradaptv2',
-                choices=['lr','mnb', 'lradapt', 'lradaptv2'],
+                choices=['lr','mnb', 'lradapt', 'lradaptv2', 'lrl2'],
                 help='classifier to use for all models')
 
 ap.add_argument('--limit',
@@ -586,7 +587,7 @@ def main():
     print "\nAverage oracle accuracy: ", np.array(oracle_accuracies).mean()
     print("Elapsed time %.3f" % (time.time() - t0))
     cheating = "CHEATING" if args.cheating else "NOCHEAT"
-    print_extrapolated_results(accuracies, aucs, file_name=args.train+"-"+cheating+"-"+args.student)
+    print_extrapolated_results(accuracies, aucs, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student)
     # experiment_utils.oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.student)
     oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student, cm=ora_cm, num_trials=args.trials)
 

@@ -314,7 +314,7 @@ def main():
 
     x_axis = defaultdict(lambda: [])
 
-    vct = TfidfVectorizer(encoding='ISO-8859-1', min_df=1, max_df=1.0, binary=False, ngram_range=(1, 2),
+    vct = TfidfVectorizer(encoding='ISO-8859-1', min_df=5, max_df=1.0, binary=False, ngram_range=(1, 1),
                           token_pattern='\\b\\w+\\b', tokenizer=StemTokenizer())
 
     print("Start loading ...")

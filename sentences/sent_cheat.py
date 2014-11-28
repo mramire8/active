@@ -57,7 +57,7 @@ ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
                 default='sr',
-                choises=['sr', 'fixkSR'],
+                choices=['sr', 'fixkSR'],
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--trials',

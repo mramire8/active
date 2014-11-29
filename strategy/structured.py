@@ -300,7 +300,7 @@ class AALStructuredReading(AnytimeLearner):
         # util = [uncertainty[x] for x in sorted_ind[:int(step_size)]]
         # TODO: remove chosen_text later this is only for debugging
         chosen_text = [sent_text[t] for t in sorted_ind[:int(step_size)]]
-        return chosen, chosen_text
+        return chosen#, chosen_text
 
     def pick_next_cal(self, pool=None, step_size=1):
         from sklearn import preprocessing

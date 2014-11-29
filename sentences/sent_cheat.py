@@ -32,7 +32,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="twitter",
+                default="20news",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -56,8 +56,8 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='sr',
-                choices=['sr', 'fixkSR'],
+                default='fixkSRMax',
+                choices=['sr', 'fixkSRMax', 'sr_rnd'],
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--trials',
@@ -141,6 +141,10 @@ ap.add_argument('--calibrate',
                 action="store_true",
                 help='calibrate student sentence classifier scores for SR')
 
+ap.add_argument('--fulloracle',
+                action="store_true",
+                help='train oracle on all data')
+
 args = ap.parse_args()
 rand = np.random.mtrand.RandomState(args.seed)
 # sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
@@ -204,6 +208,12 @@ def get_student(clf, cost_model, sent_clf, t, vct):
         student = structured.AALTFEStructuredReadingFK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
                                                      vcn=vct,
                                                      subpool=250, cost_model=cost_model)
+    elif args.student in "sr_rnd":
+        student = structured.AALStructuredReadingMax(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
+                                                     vcn=vct,
+                                                     subpool=250, cost_model=cost_model)
+        student.set_sent_score(student.score_rnd)
+
     elif args.student in "firstkmax_tfe":
         student = structured.AALTFEStructuredReadingFK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
                                                      vcn=vct,
@@ -358,16 +368,17 @@ def main():
 
     ## create splits of data: pool, test, oracle, sentences
     expert_data = Bunch()
-    train_test_data = Bunch()
+    if not args.fulloracle:
+        train_test_data = Bunch()
 
-    expert_data.sentence, train_test_data.pool = split_data(data.train)
-    expert_data.oracle, train_test_data.test = split_data(data.test)
+        expert_data.sentence, train_test_data.pool = split_data(data.train)
+        expert_data.oracle, train_test_data.test = split_data(data.test)
 
-    data.train.data = train_test_data.pool.train.data
-    data.train.target = train_test_data.pool.train.target
+        data.train.data = train_test_data.pool.train.data
+        data.train.target = train_test_data.pool.train.target
 
-    data.test.data = train_test_data.test.train.data
-    data.test.target = train_test_data.test.train.target
+        data.test.data = train_test_data.test.train.data
+        data.test.target = train_test_data.test.train.target
 
     ## convert document to matrix
     data.train.bow = vct.fit_transform(data.train.data)
@@ -375,15 +386,27 @@ def main():
 
     #### EXPERT CLASSIFIER: ORACLE
     print("Training Oracle expert")
-
-    labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=2)
-
-    expert_data.oracle.train.data = sent_train
-    expert_data.oracle.train.target = np.array(labels)
-    expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
-
     exp_clf = set_classifier(args.classifier, parameter=args.expert_penalty)
-    exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
+
+    if not args.fulloracle:
+        print "Training expert documents:%s" % len(expert_data.oracle.train.data)
+        labels, sent_train = split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=args.limit)
+
+        expert_data.oracle.train.data = sent_train
+        expert_data.oracle.train.target = np.array(labels)
+        expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
+
+        exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
+    else:
+        expert_data.data = np.concatenate((data.train.data, data.test.data))
+        expert_data.target = np.concatenate((data.train.target, data.test.target))
+        expert_data.target_names = data.train.target_names
+        labels, sent_train = split_data_sentences(expert_data, sent_detector, vct, limit=args.limit)
+        expert_data.bow = vct.transform(sent_train)
+        expert_data.target = labels
+        expert_data.data = sent_train
+        exp_clf.fit(expert_data.bow, expert_data.target)
+
 
     if "neutral" in args.expert:
         expert = baseexpert.NeutralityExpert(exp_clf, threshold=args.neutral_threshold,
@@ -400,20 +423,19 @@ def main():
 
     #### EXPERT CLASSIFIER: SENTENCES
     print("Training sentence expert")
-    labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=2)
-
-    expert_data.sentence.train.data = sent_train
-    expert_data.sentence.train.target = np.array(labels)
-    expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
 
     sent_clf = None
     if args.cheating:
+        labels, sent_train = split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=args.limit)
+
+        expert_data.sentence.train.data = sent_train
+        expert_data.sentence.train.target = np.array(labels)
+        expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
         sent_clf = set_classifier(args.classifier, parameter=args.expert_penalty)
         sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
     #### STUDENT CLASSIFIER
     clf = set_classifier(args.classifier, parameter=args.expert_penalty)
-    # clf = set_classifier(args.classifier)
 
 
     print "\nStudent Classifier: %s" % clf

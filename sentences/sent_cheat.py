@@ -32,7 +32,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="20news",
+                default="twitter",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -56,7 +56,7 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='fixkSRMax',
+                default='sr',
                 choices=['sr', 'fixkSRMax', 'sr_rnd'],
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
@@ -105,7 +105,7 @@ ap.add_argument('--cost-model',
 ap.add_argument('--classifier',
                 metavar='STUDENT_MODEL',
                 type=str,
-                default='lradaptv2',
+                default='lrl2',
                 choices=['lr','mnb', 'lradapt', 'lradaptv2', 'lrl2'],
                 help='classifier to use for all models')
 
@@ -363,7 +363,7 @@ def main():
     data.train.data = clean_html(data.train.data)
     data.test.data = clean_html(data.test.data)
 
-    print("Train:{}, Test:{}, {}".format(len(data.train.data), len(data.test.data), data.test.target.shape[0]))
+    print("Train:{}, Test:{}".format(len(data.train.data), len(data.test.data)))
     ## Get the features of the sentence dataset
 
     ## create splits of data: pool, test, oracle, sentences
@@ -383,7 +383,7 @@ def main():
     ## convert document to matrix
     data.train.bow = vct.fit_transform(data.train.data)
     data.test.bow = vct.transform(data.test.data)
-
+    print "Features:", data.train.bow.shape[1]
     #### EXPERT CLASSIFIER: ORACLE
     print("Training Oracle expert")
     exp_clf = set_classifier(args.classifier, parameter=args.expert_penalty)
@@ -398,8 +398,10 @@ def main():
 
         exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
     else:
-        expert_data.data = np.concatenate((data.train.data, data.test.data))
-        expert_data.target = np.concatenate((data.train.target, data.test.target))
+        # expert_data.data = np.concatenate((data.train.data, data.test.data))
+        # expert_data.target = np.concatenate((data.train.target, data.test.target))
+        expert_data.data =data.train.data
+        expert_data.target = data.train.target
         expert_data.target_names = data.train.target_names
         labels, sent_train = split_data_sentences(expert_data, sent_detector, vct, limit=args.limit)
         expert_data.bow = vct.transform(sent_train)

@@ -359,7 +359,7 @@ class AALStructuredReading(AnytimeLearner):
         new_scores[order] = a
         cal_scores = self._reshape_scores(new_scores, docs)
         # p0 = self._reshape_scores(all_p0, docs)
-        print new_scores.max()
+
         selected_sent = [np.argmax(row) for row in cal_scores]  # get the sentence index of the highest score per document
         selected = [docs[i][k] for i, k in enumerate(selected_sent)]  # get the bow of the sentences with the highest score
         selected_score = [np.max(row) for row in cal_scores]  ## get the max utility score per document

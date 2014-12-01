@@ -180,14 +180,14 @@ def sentences_average(pool, vct, sent_detector):
 
 ###################### MAIN ####################
 
-def get_student(clf, cost_model, sent_clf, t, vct):
+def get_student(clf, cost_model, sent_clf, sent_token, vct):
     cheating = args.cheating
 
     if args.student in "fixkSR":
         # student = structured.AALStructuredFixk(model=clf, accuracy_model=None, budget=args.budget, seed=t, vcn=vct,
         #                                         subpool=250, cost_model=cost_model)
         # student.set_score_model(expert)
-        student = structured.AALStructuredReadingFirstK(model=clf, accuracy_model=None, budget=args.budget, seed=t,
+        student = structured.AALStructuredReadingFirstK(model=clf, accuracy_model=None, budget=args.budget, seed=args.seed,
                                                         vcn=vct,
                                                         subpool=250, cost_model=cost_model)
     elif args.student in "fixkSRMax":
@@ -250,6 +250,7 @@ def get_student(clf, cost_model, sent_clf, t, vct):
     student.limit = args.limit
     if args.calibrate:
         student.set_sent_score(student.score_p0)
+    student.sent_detector = sent_token
     return student
 
 
@@ -465,7 +466,7 @@ def main():
         print "*" * 60
         print "Trial: %s" % t
 
-        student = get_student(clf, cost_model, sent_clf, t, vct)
+        student = get_student(clf, cost_model, sent_clf, sent_detector, vct)
 
         print "\nStudent: %s " % student
 

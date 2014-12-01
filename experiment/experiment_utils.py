@@ -394,7 +394,7 @@ def clean_html(data):
     return sent_train
 
 
-def get_student(clf, cost_model, sent_clf, t, vct, args):
+def get_student(clf, cost_model, sent_clf, sent_token, vct, args):
     from strategy import structured
     cheating = args.cheating
 
@@ -443,4 +443,5 @@ def get_student(clf, cost_model, sent_clf, t, vct, args):
     if args.calibrate:
         student.set_sent_score(student.score_p0)
         student.calibratescores = True
+    student.sent_detector = sent_token
     return student

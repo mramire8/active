@@ -32,7 +32,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="twitter",
+                default="20news",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -75,7 +75,7 @@ ap.add_argument('--folds',
 ap.add_argument('--budget',
                 metavar='BUDGET',
                 type=int,
-                default=150,
+                default=700,
                 help='budget')
 
 ap.add_argument('--step-size',
@@ -87,7 +87,7 @@ ap.add_argument('--step-size',
 ap.add_argument('--bootstrap',
                 metavar='BOOTSTRAP',
                 type=int,
-                default=50,
+                default=10,
                 help='size of the initial labeled dataset')
 
 ap.add_argument('--cost-function',
@@ -118,7 +118,7 @@ ap.add_argument('--limit',
 ap.add_argument('--maxiter',
                 metavar='MAXITER',
                 type=int,
-                default=100,
+                default=70,
                 help='Max number of iterations')
 
 ap.add_argument('--prefix',
@@ -141,9 +141,19 @@ ap.add_argument('--calibrate',
                 action="store_true",
                 help='calibrate student sentence classifier scores for SR')
 
+ap.add_argument('--logitscores',
+                action="store_true",
+                help='logit applied to the z-scores during calibration')
+
 ap.add_argument('--fulloracle',
                 action="store_true",
                 help='train oracle on all data')
+
+ap.add_argument('--calithreshold',
+                metavar='CALIBRATION',
+                type=str,
+                default="(.5,.5)",
+                help='threshold of calibration values')
 
 args = ap.parse_args()
 rand = np.random.mtrand.RandomState(args.seed)
@@ -250,6 +260,10 @@ def get_student(clf, cost_model, sent_clf, sent_token, vct):
     student.limit = args.limit
     if args.calibrate:
         student.set_sent_score(student.score_p0)
+        student.calibratescores = True
+        student.set_calibration_threshold(parse_parameters_mat(args.calithreshold))
+        if args.logitscores:
+            student.logit_scores = True
     student.sent_detector = sent_token
     return student
 

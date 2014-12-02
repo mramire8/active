@@ -61,7 +61,8 @@ ap.add_argument('--student',
 ap.add_argument('--classifier',
                 metavar='STUDENT_MODEL',
                 type=str,
-                default='lradapt',
+                default='lrl2',
+                choices=['lr','mnb', 'lradapt', 'lradaptv2', 'lrl2'],
                 help='[lr|mnb|lradapt]')
 
 ap.add_argument('--trials',
@@ -139,9 +140,19 @@ ap.add_argument('--calibrate',
                 action="store_true",
                 help='calibrate student sentence classifier scores for SR')
 
+ap.add_argument('--logitscores',
+                action="store_true",
+                help='logit applied to the z-scores during calibration')
+
 ap.add_argument('--fulloracle',
                 action="store_true",
                 help='train oracle on all data')
+
+ap.add_argument('--calithreshold',
+                metavar='CALIBRATION',
+                type=str,
+                default="(.5,.5)",
+                help='threshold of calibration values')
 
 args = ap.parse_args()
 rand = np.random.RandomState(args.seed)
@@ -180,7 +191,7 @@ def sentences_average(pool, vct):
 ####################### MAIN ####################
 
 
-def get_student(clf, cost_model, sent_clf, t, vct):
+def get_student(clf, cost_model, sent_clf, sent_token, vct):
     cheating = args.cheating
 
     if args.student in "rnd_sr":
@@ -227,6 +238,11 @@ def get_student(clf, cost_model, sent_clf, t, vct):
     student.limit = args.limit
     if args.calibrate:
         student.set_sent_score(student.score_p0)
+        student.calibratescores = True
+        student.set_calibration_threshold(parse_parameters_mat(args.calithreshold))
+        if args.logitscores:
+            student.logit_scores = True
+    student.sent_detector = sent_token
     return student
 
 
@@ -500,7 +516,7 @@ def main():
         print "*" * 60
         print "Trial: %s" % t
 
-        student = get_student(clf, cost_model, sent_clf, t, vct)
+        student = get_student(clf, cost_model, sent_clf, sent_detector, vct)
         student.human_mode = args.expert == 'human'
         print "\nStudent: %s " % student
 

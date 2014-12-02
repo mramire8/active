@@ -16,7 +16,7 @@ import argparse
 import numpy as np
 from sklearn.datasets.base import Bunch
 from datautil.load_data import load_from_file, split_data
-from sklearn import linear_model
+from sklearn.linear_model import LogisticRegression
 import time
 
 from collections import defaultdict
@@ -30,13 +30,14 @@ from sklearn import metrics
 from learner.adaptive_lr import LogisticRegressionAdaptive, LogisticRegressionAdaptiveV2
 import matplotlib.pyplot as plt
 import copy
+from datautil.textutils import TwitterSentenceTokenizer
 
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="twitter",
                 help='training data (libSVM format)')
 
 ap.add_argument('--neutral-threshold',
@@ -577,13 +578,14 @@ def main():
     if args.fixk < 0:
         args.fixk = None
 
-    # clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
-    clf = LogisticRegressionAdaptiveV2(penalty='l1', C=1)
+    clf = LogisticRegression(penalty='l2', C=args.expert_penalty)
+    # clf = LogisticRegressionAdaptiveV2(penalty='l1', C=1)
     from sklearn.base import clone
     exp_clf, data, vct, cost_model, sent_clf, sent_data = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
     print "\nExpert: %s " % exp_clf
 
-    exp_copy = LogisticRegressionAdaptiveV2(penalty='l1', C=1, class_weight={0:.5, 1:.5})
+    # exp_copy = LogisticRegressionAdaptiveV2(penalty='l1', C=1, class_weight={0:.5, 1:.5})
+    exp_copy = LogisticRegression(penalty='l2', C=1)
     exp_copy.fit(sent_data.oracle.train.bow, sent_data.oracle.train.target)
 
     print ("Sentences scoring")
@@ -615,7 +617,7 @@ def main():
         print sentences_average(pool, vct)
 
     # fns = [student.score_fk, student.score_max, student.score_rnd, student.score_max_feat, student.score_max_sim]
-    # fns = [student.score_max]
+    fns = [student.score_max]
 
     if test_methods:
         other_distribution(exp_clf, fns, pool, sent_clf, student, vct)  ## get prob. distribution without calibration
@@ -638,8 +640,8 @@ def main():
             print "="*40
             print cal
             print "="*40
-            if cal == 'zscore':
-                student.
+            # if cal == 'zscore':
+                # student.
             loc, sco = score_distribution(cal, pool, sent_data, student, all_sizes,
                                           cheating=False, oracle=exp_copy)
             sent_loc.append(loc)
@@ -699,10 +701,12 @@ def sentence_scores_debug():
     args.fixk = None
 
     clf = LogisticRegressionAdaptiveV2(penalty='l1', C=1)
+    clf = LogisticRegression(penalty='l2', C=1)
     exp_clf, data, vct, cost_model, sent_clf, sent_data = get_data(clf, args.train, [categories[0]], args.fixk, min_size, vct, raw=True)  # expert: classifier, data contains train and test
     print "\nExpert: %s " % exp_clf
 
     exp_copy = LogisticRegressionAdaptiveV2(penalty='l1', C=1, class_weight={0:.5, 1:.5})
+    exp_copy = LogisticRegression(penalty='l2', C=1)
     exp_copy.fit(sent_data.oracle.train.bow, sent_data.oracle.train.target)
 
     print ("Sentences scoring")
@@ -714,6 +718,11 @@ def sentence_scores_debug():
     student.set_score_model(exp_clf)  # expert model
     student.set_sentence_model(sent_clf)  # expert sentence model
     student.limit = 2
+    if args.train == "twitter":
+        student.sent_detector = TwitterSentenceTokenizer()
+    else:
+        student.sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
+
     print "Expert: :", exp_clf
     print "Sentence:", sent_clf
 
@@ -734,12 +743,12 @@ def sentence_scores_debug():
 
     for i in range(5):
 
-        size=5000
+        size=150*200
 
         rand2 = np.random.mtrand.RandomState(i*4325)
         indices = rand2.permutation(len(pool.remaining))
 
-        clf = LogisticRegressionAdaptiveV2(penalty='l1', C=1)
+        clf = LogisticRegression(penalty='l2', C=1)
 
         clf.fit(train_sent.bow[:size], train_sent.target[:size])
         student.set_sent_score(student.score_p0)
@@ -876,6 +885,6 @@ def print_document(text_sent, offset, method_name='', top=500, **kwargs):
         # print "-"*60
 
 if __name__ == '__main__':
-    main()
-    # sentence_scores_debug()
+    # main()
+    sentence_scores_debug()
 

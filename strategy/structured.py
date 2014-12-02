@@ -275,6 +275,8 @@ class AALStructuredReading(AnytimeLearner):
         self.fn_utility = self.utility_base
         self.rnd_vals = RandomState(4321)
         self.limit = 0
+        self.calibration_threshold = (.5, .5)
+        self.logit_scores = False
 
     def pick_next(self, pool=None, step_size=1):
 
@@ -338,21 +340,23 @@ class AALStructuredReading(AnytimeLearner):
         ordered_p0 = all_p0[order]
         from sys import maxint
 
-        upper = .5
-        lower = .5
+        upper = self.calibration_threshold[1]
+        lower = self.calibration_threshold[0]
         if upper is not .5:
             c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= upper])
             c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
             mid = len(ordered_p0) - ((ordered_p0 >= upper).sum() + (ordered_p0 <= lower).sum())
             middle = np.array([-maxint]*mid)
             print "Threshold:", lower, upper
-            print "middle:", len(middle)
+            print "middle:", len(middle),
             a = np.concatenate((c0_scores, middle,c1_scores))
+            print "all:", len(a), 1.*len(middle)/len(a), len(c0_scores), len(c1_scores)
         else:
             c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > upper])
             c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
             print "Threshold:", lower, upper
             a = np.concatenate((c0_scores, c1_scores))
+            print "all:", len(a), 1.*len(c0_scores)/len(a), len(c0_scores), len(c1_scores)
 
 
         new_scores = np.zeros(n)
@@ -367,7 +371,11 @@ class AALStructuredReading(AnytimeLearner):
         selected_text = [text_sent[i][k] for i,k in enumerate(selected_sent)]
 
         ## pick document-sentence
-        joint = np.array(unc_utility) * selected_score
+        if self.logit_scores:
+            joint = np.array(unc_utility) * self._logit(selected_score)
+        else:
+            joint = np.array(unc_utility) * selected_score
+
         final_order = joint.argsort()[::-1]
         chosen = [[remaining[x], test_sent[x]] for x in final_order[:int(step_size)]]  #index and k of chosen
         chosen_text = [selected_text[x] for x in final_order[:int(step_size)]]
@@ -385,6 +393,13 @@ class AALStructuredReading(AnytimeLearner):
         calibrated = (np.ones(n_scores)*bounds[1]) - (np.array(range(n_scores))*delta)
         return calibrated
 
+    def set_calibration_threshold(self, thr):
+        """
+        set the threshold for the calibration
+        :param thr: tuple
+            lower bound and upper bound
+        """
+        self.calibration_threshold = thr
 
     def _reshape_scores2(self, scores, sent_mat):
         """
@@ -419,6 +434,8 @@ class AALStructuredReading(AnytimeLearner):
             i = j
         return sr
 
+    def _logit(self, x):
+        return 1. / (1. + np.exp(-x))
 
     def utility_base(self, instance):
         raise Exception("We need a utility function")

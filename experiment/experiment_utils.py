@@ -443,5 +443,6 @@ def get_student(clf, cost_model, sent_clf, sent_token, vct, args):
     if args.calibrate:
         student.set_sent_score(student.score_p0)
         student.calibratescores = True
+        student.set_calibration_threshold(parse_parameters_mat(args.calithreshold))
     student.sent_detector = sent_token
     return student

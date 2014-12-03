@@ -54,7 +54,7 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='rnd_srcs',
+                default='rnd_sr',
                 choices=['rnd_first1', 'rnd_sr', 'rnd_srcs', 'rnd_rnd', 'rnd_srmv'],  # , 'rnd_srre'],
                 help='Type of student')
 
@@ -240,8 +240,8 @@ def get_student(clf, cost_model, sent_clf, sent_token, vct):
         student.set_sent_score(student.score_p0)
         student.calibratescores = True
         student.set_calibration_threshold(parse_parameters_mat(args.calithreshold))
-        if args.logitscores:
-            student.logit_scores = True
+        # if args.logitscores:
+        #     student.logit_scores = True
     student.sent_detector = sent_token
     return student
 

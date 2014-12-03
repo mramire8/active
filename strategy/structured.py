@@ -913,23 +913,37 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
         if n != len(all_p0):
             raise Exception("Oops there is something wrong! We don't have the same size")
 
+        # all_p0 = np.array(all_p0)
 
         order = all_p0.argsort()[::-1] ## descending order
         ## generate scores equivalent to max prob
         ordered_p0 = all_p0[order]
         from sys import maxint
 
-        c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > .5])
-        c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= .5])
-
-        a = np.concatenate((c0_scores, c1_scores))
+        upper = self.calibration_threshold[1]
+        lower = self.calibration_threshold[0]
+        if upper is not .5:
+            c0_scores = preprocessing.scale(ordered_p0[ordered_p0 >= upper])
+            c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+            mid = len(ordered_p0) - ((ordered_p0 >= upper).sum() + (ordered_p0 <= lower).sum())
+            middle = np.array([-maxint]*mid)
+            print "Threshold:", lower, upper
+            print "middle:", len(middle),
+            a = np.concatenate((c0_scores, middle,c1_scores))
+            print "all:", len(a), 1.*len(middle)/len(a), len(c0_scores), len(c1_scores)
+        else:
+            c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > upper])
+            c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
+            print "Threshold:", lower, upper
+            a = np.concatenate((c0_scores, c1_scores))
+            print "all:", len(a), 1.*len(c0_scores)/len(a), len(c0_scores), len(c1_scores)
 
 
         new_scores = np.zeros(n)
         new_scores[order] = a
         cal_scores = self._reshape_scores(new_scores, docs)
         # p0 = self._reshape_scores(all_p0, docs)
-        print new_scores.max()
+
         selected_sent = [np.argmax(row) for row in cal_scores]  # get the sentence index of the highest score per document
         selected = [docs[i][k] for i, k in enumerate(selected_sent)]  # get the bow of the sentences with the highest score
         selected_score = [np.max(row) for row in cal_scores]  ## get the max utility score per document

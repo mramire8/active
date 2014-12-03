@@ -26,13 +26,13 @@ import argparse
 import numpy as np
 import time
 from collections import defaultdict
-
+from datautil.textutils import TwitterSentenceTokenizer
 #############  COMMAND LINE PARAMETERS ##################
 ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="imdb",
+                default="20news",
                 help='training data (libSVM format)')
 
 ap.add_argument('--expert-penalty',
@@ -50,7 +50,7 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='unc_sr_tfe',
+                default='unc_sr',
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--classifier',
@@ -129,12 +129,23 @@ ap.add_argument('--cheating',
                 action="store_true",
                 help='experiment cheating version - study purposes')
 
+ap.add_argument('--calibrate',
+                action="store_true",
+                help='calibrate student sentence classifier scores for SR')
+
+ap.add_argument('--fulloracle',
+                action="store_true",
+                help='train oracle on all data')
+
+ap.add_argument('--calithreshold',
+                metavar='CALIBRATION',
+                type=str,
+                default="(.5,.5)",
+                help='threshold of calibration values')
+
 args = ap.parse_args()
 rand = np.random.mtrand.RandomState(args.seed)
 sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
-
-print args
-print
 
 
 def sentences_average(pool, vct):
@@ -168,7 +179,7 @@ def sentences_average(pool, vct):
 ####################### MAIN ####################
 
 
-def get_student(clf, cost_model, sent_clf, t, vct):
+def get_student(clf, cost_model, sent_clf, sent_token, vct):
     cheating = args.cheating
 
     if args.student == "unc_first1":
@@ -203,10 +214,15 @@ def get_student(clf, cost_model, sent_clf, t, vct):
     else:
         raise ValueError("Oops! We do not know that anytime strategy. Try again.")
 
-    student.set_score_model(clf)          # student classifier
-    student.set_sentence_model(sent_clf)  # student sentence classifier
-    student.set_cheating(cheating)        # cheating part, use and expert in sentences
+    student.set_score_model(clf)  # student classifier
+    student.set_sentence_model(sent_clf)  # cheating part, use and expert in sentences
+    student.set_cheating(cheating)
     student.limit = args.limit
+    if args.calibrate:
+        student.set_sent_score(student.score_p0)
+        student.calibratescores = True
+        student.set_calibration_threshold(experiment_utils.parse_parameters_mat(args.calithreshold))
+    student.sent_detector = sent_token
 
     return student
 
@@ -277,6 +293,9 @@ def update_sentence_query(neutral_data, neu_x, neu_y, query, labels):
 
 
 def main():
+    print args
+    print
+
     accuracies = defaultdict(lambda: [])
 
     ora_accu = defaultdict(lambda: [])
@@ -302,7 +321,7 @@ def main():
                   ['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware'],
                   ['rec.sport.baseball', 'sci.crypt']]
 
-    min_size = 10
+    min_size = None
 
     args.fixk = None
 
@@ -319,7 +338,10 @@ def main():
     print "\nCost Model: %s" % cost_model.__class__.__name__
 
     ### SENTENCE TRANSFORMATION
-    sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
+    if args.train == "twitter":
+        sent_detector = TwitterSentenceTokenizer()
+    else:
+        sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
 
     ## delete <br> to "." to recognize as end of sentence
     data.train.data = experiment_utils.clean_html(data.train.data)
@@ -330,16 +352,17 @@ def main():
 
     ## create splits of data: pool, test, oracle, sentences
     expert_data = Bunch()
-    train_test_data = Bunch()
+    if not args.fulloracle:
+        train_test_data = Bunch()
 
-    expert_data.sentence, train_test_data.pool = split_data(data.train)
-    expert_data.oracle, train_test_data.test = split_data(data.test)
+        expert_data.sentence, train_test_data.pool = split_data(data.train)
+        expert_data.oracle, train_test_data.test = split_data(data.test)
 
-    data.train.data = train_test_data.pool.train.data
-    data.train.target = train_test_data.pool.train.target
+        data.train.data = train_test_data.pool.train.data
+        data.train.target = train_test_data.pool.train.target
 
-    data.test.data = train_test_data.test.train.data
-    data.test.target = train_test_data.test.train.target
+        data.test.data = train_test_data.test.train.data
+        data.test.target = train_test_data.test.train.target
 
     ## convert document to matrix
     data.train.bow = vct.fit_transform(data.train.data)
@@ -347,15 +370,26 @@ def main():
 
     #### EXPERT CLASSIFIER: ORACLE
     print("Training Oracle expert")
-    labels, sent_train = experiment_utils.split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=args.limit)
-
-    expert_data.oracle.train.data = sent_train
-    expert_data.oracle.train.target = np.array(labels)
-    expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
-
-    # exp_clf = linear_model.LogisticRegression(penalty='l1', C=args.expert_penalty)
     exp_clf = experiment_utils.set_classifier(args.classifier, parameter=args.expert_penalty)
-    exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
+
+    if not args.fulloracle:
+        print "Training expert documents:%s" % len(expert_data.oracle.train.data)
+        labels, sent_train = experiment_utils.split_data_sentences(expert_data.oracle.train, sent_detector, vct, limit=args.limit)
+
+        expert_data.oracle.train.data = sent_train
+        expert_data.oracle.train.target = np.array(labels)
+        expert_data.oracle.train.bow = vct.transform(expert_data.oracle.train.data)
+
+        exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
+    else:
+        expert_data.data = np.concatenate((data.train.data, data.test.data))
+        expert_data.target = np.concatenate((data.train.target, data.test.target))
+        expert_data.target_names = data.train.target_names
+        labels, sent_train = experiment_utils.split_data_sentences(expert_data, sent_detector, vct, limit=args.limit)
+        expert_data.bow = vct.transform(sent_train)
+        expert_data.target = labels
+        expert_data.data = sent_train
+        exp_clf.fit(expert_data.bow, expert_data.target)
 
     if "neutral" in args.expert:
         expert = baseexpert.NeutralityExpert(exp_clf, threshold=args.neutral_threshold,
@@ -374,14 +408,13 @@ def main():
 
     #### EXPERT CLASSIFIER: SENTENCES
     print("Training sentence expert")
-    labels, sent_train = experiment_utils.split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=args.limit)
-
-    expert_data.sentence.train.data = sent_train
-    expert_data.sentence.train.target = np.array(labels)
-    expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
-
     sent_clf = None
     if args.cheating:
+        labels, sent_train = experiment_utils.split_data_sentences(expert_data.sentence.train, sent_detector, vct, limit=args.limit)
+
+        expert_data.sentence.train.data = sent_train
+        expert_data.sentence.train.target = np.array(labels)
+        expert_data.sentence.train.bow = vct.transform(expert_data.sentence.train.data)
         sent_clf = experiment_utils.set_classifier(args.classifier, parameter=args.expert_penalty)
         sent_clf.fit(expert_data.sentence.train.bow, expert_data.sentence.train.target)
 
@@ -414,7 +447,7 @@ def main():
         print "*" * 60
         print "Trial: %s" % t
 
-        student = get_student(clf, cost_model, sent_clf, t, vct)
+        student = get_student(clf, cost_model, sent_clf, sent_detector, vct)
         student.human_mode = args.expert == 'human'
 
         print "\nStudent: %s " % student
@@ -439,6 +472,7 @@ def main():
         query_index = None
         query_size = None
         oracle_answers = 0
+        calibrated=args.calibrate
         while 0 < student.budget and len(pool.remaining) > step_size and iteration <= args.maxiter:
             util = []
 
@@ -452,8 +486,10 @@ def main():
                 print "Bootstrap: %s " % bt.__class__.__name__
                 print
             else:
-
-                chosen = student.pick_next(pool=pool, step_size=step_size)
+                if not calibrated:
+                    chosen = student.pick_next(pool=pool, step_size=step_size)
+                else:
+                    chosen = student.pick_next_cal(pool=pool, step_size=step_size)
 
                 query_index = [x for x, y in chosen]  # document id of chosen instances
                 query = [y[0] for x, y in chosen]  # sentence of the document
@@ -556,11 +592,8 @@ def main():
     print("Elapsed time %.3f" % (time.time() - t0))
     cheating = "CHEATING" if args.cheating else "NOCHEAT"
     experiment_utils.print_extrapolated_results(accuracies, aucs, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student)
-    experiment_utils.oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student, cm=ora_cm)
+    experiment_utils.oracle_accuracy(ora_accu, file_name=args.train+"-"+cheating+"-"+args.prefix+"-"+args.classifier+"-"+args.student, cm=ora_cm, num_trials=args.trials)
 
-def main2():
-    ## Todo: create a main loop to make generic code
-    pass
 
 ## MAIN FUNCTION
 if __name__ == '__main__':

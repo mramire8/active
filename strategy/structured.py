@@ -435,7 +435,7 @@ class AALStructuredReading(AnytimeLearner):
         return sr
 
     def _logit(self, x):
-        return 1. / (1. + np.exp(-x))
+        return 1. / (1. + np.exp(-np.array(x)))
 
     def utility_base(self, instance):
         raise Exception("We need a utility function")

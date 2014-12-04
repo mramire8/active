@@ -517,7 +517,7 @@ def load_documents(datafile="", header=True):
 
 
 def load_from_file(train, categories, fixk, min_size, vct, raw=True):
-    fixk_saved = "{0}{1}.p".format(train, fixk)
+    fixk_saved = "{0}-MIN{1}.p".format(train, min_size)
     try:
         print "Loading existing file... %s " % train
         fixk_file = open(fixk_saved, "rb")

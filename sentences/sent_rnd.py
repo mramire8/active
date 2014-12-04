@@ -34,7 +34,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="twitter",
+                default="20news",
                 help='training data (libSVM format)')
 
 
@@ -80,7 +80,7 @@ ap.add_argument('--folds',
 ap.add_argument('--budget',
                 metavar='BUDGET',
                 type=int,
-                default=200,
+                default=400,
                 help='budget')
 
 ap.add_argument('--step-size',
@@ -111,7 +111,7 @@ ap.add_argument('--cost-model',
 ap.add_argument('--maxiter',
                 metavar='MAXITER',
                 type=int,
-                default=10,
+                default=30,
                 help='Max number of iterations')
 
 ap.add_argument('--limit',
@@ -386,12 +386,13 @@ def main():
                       ['physics.comp-ph','physics.data-an']]
         categories=categories[0]
 
-    min_size = None
+    min_size = 10
 
     args.fixk = None
 
     data, vct = load_from_file(args.train, [categories], args.fixk, min_size, vct, raw=True)
     print data.train.target_names
+    print "Vectorizer:", vct
     print("Data %s" % args.train)
     print("Data size %s" % len(data.train.data))
 
@@ -447,8 +448,10 @@ def main():
 
         exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
     else:
-        expert_data.data = np.concatenate((data.train.data, data.test.data))
-        expert_data.target = np.concatenate((data.train.target, data.test.target))
+        # expert_data.data = np.concatenate((data.train.data, data.test.data))
+        # expert_data.target = np.concatenate((data.train.target, data.test.target))
+        expert_data.data =data.train.data
+        expert_data.target = data.train.target
         expert_data.target_names = data.train.target_names
         labels, sent_train = split_data_sentences(expert_data, sent_detector, vct, limit=args.limit)
         expert_data.bow = vct.transform(sent_train)
@@ -555,10 +558,11 @@ def main():
 
                 print
             else:
-                if not calibrated:
-                    chosen = student.pick_next(pool=pool, step_size=step_size)
-                else:
-                    chosen = student.pick_next_cal(pool=pool, step_size=step_size)
+                # if not calibrated:
+                #     chosen = student.pick_next(pool=pool, step_size=step_size)
+                # else:
+                #     chosen = student.pick_next_cal(pool=pool, step_size=step_size)
+                chosen = student.pick_next(pool=pool, step_size=step_size)
 
                 query_index = [x for x, y in chosen]  # document id of chosen instances
                 query = [y for x, y in chosen]  # sentence of the document

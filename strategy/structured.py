@@ -616,7 +616,8 @@ class AALStructuredReading(AnytimeLearner):
 
     def __str__(self):
         string = "{0}(seed={seed}".format(self.__class__.__name__, seed=self.seed)
-        string += ", clf = {}, utility={}, score={})".format(self.model, self.fn_utility.__name__, self.score.__name__)
+        string += ", clf = {}, utility={}, score={}".format(self.model, self.fn_utility.__name__, self.score.__name__)
+        string += ", sent_detector={})".format(self.sent_detector.__class__.__name__)
         return string
 
     def __repr__(self):
@@ -865,7 +866,6 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
         else:
             for x, y in chosen[:step_size]:
                 final.append([x, y[0][0]]) #index, feature vector
-
         return final
         # return chosen
 
@@ -880,34 +880,34 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
             chosen = [[index, self.x_utility(pool.data[index], pool.text[index])] for index in chosen_x]
         else:
             sent_chosen = self.pick_next_sentence_cal(chosen_x, pool)
-            chosen = [[index, sent_bow, pool.text[index]] for index, sent_bow in sent_chosen]
+            chosen = [[index, sent_bow] for index, sent_bow in sent_chosen]
+            # chosen = [[index, sent_bow] for index, sent_bow in sent_chosen]
 
         return chosen
 
     def pick_next_sentence_cal(self, chosen_x, pool):
         from sklearn import preprocessing
 
-        list_pool = list(pool.remaining)
-        indices = self.randgen.permutation(len(pool.remaining))
-        remaining = [list_pool[index] for index in indices]
+        # list_pool = list(pool.remaining)
+        # indices = self.randgen.permutation(len(pool.remaining))
+        remaining = [x for x in chosen_x]
 
-        if self.subpool is None:
-            self.subpool = len(pool.remaining)
-        remaining = list(set(remaining[:self.subpool]) | set(chosen_x))
+        # if self.subpool is None:
+        #     self.subpool = len(pool.remaining)
+        # remaining = list(set(remaining[:self.subpool]) | set(chosen_x))
 
         text_sent = []
         all_scores = []
         all_p0 = []
         docs = []
         unc_utility = []
-
+        used_index = []
         for i in remaining:
             utilities, sent_bow, sent_txt = self.x_utility_cal(pool.data[i], pool.text[i])  # utulity for every sentences in document
             all_scores.extend(utilities) ## every score
             docs.append(sent_bow)  ## sentences for each document list of list
             text_sent.append(sent_txt)  ## text sentences for each document
             all_p0 = np.concatenate((all_p0, utilities))
-
         ## Calibrate scores
         n = len(all_scores)
         if n != len(all_p0):
@@ -927,14 +927,14 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
             c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
             mid = len(ordered_p0) - ((ordered_p0 >= upper).sum() + (ordered_p0 <= lower).sum())
             middle = np.array([-maxint]*mid)
-            print "Threshold:", lower, upper
+            print "Threshold seq:", lower, upper
             print "middle:", len(middle),
             a = np.concatenate((c0_scores, middle,c1_scores))
             print "all:", len(a), 1.*len(middle)/len(a), len(c0_scores), len(c1_scores)
         else:
             c0_scores = preprocessing.scale(ordered_p0[ordered_p0 > upper])
             c1_scores = -1. * preprocessing.scale(ordered_p0[ordered_p0 <= lower])
-            print "Threshold:", lower, upper
+            print "Threshold seq:", lower, upper
             a = np.concatenate((c0_scores, c1_scores))
             print "all:", len(a), 1.*len(c0_scores)/len(a), len(c0_scores), len(c1_scores)
 
@@ -951,8 +951,9 @@ class AALUtilityThenStructuredReading(AALStructuredReading):
         selected_text = [text_sent[i][k] for i,k in enumerate(selected_sent)]
 
         ## pick document-sentence
-        chosen = [[remaining[x], test_sent[x]] for x in remaining if x in chosen_x]
-        chosen_text = [selected_text[x] for x in remaining if x in chosen_x]
+        # chosen = [[remaining[x], test_sent[x]] for x in remaining if x in chosen_x]
+        chosen = [[x, test_sent[i]] for i, x in enumerate(remaining) if x in chosen_x]
+        chosen_text = [selected_text[i] for i, x in enumerate(remaining) if x in chosen_x]
 
         #todo: human vs simulated expert
         return chosen#, chosen_text
@@ -1080,9 +1081,11 @@ class AALRandomThenSR(AALUtilityThenStructuredReading):
             for x, y in chosen[:step_size]:
                 final.append([x, y[1]])  # index, text
         else:
-            for x, y in chosen[:step_size]:
-                final.append([x, y[0][0]]) #index, feature vector
-
+            try:
+                for x, y in chosen[:step_size]:
+                    final.append([x, y[0][0]]) #index, feature vector
+            except IndexError:
+                print chosen[:step_size]
         return final
 
     def x_utility_cs(self, instance, instance_text):

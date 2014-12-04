@@ -26,3 +26,6 @@ class TwitterSentenceTokenizer(object):
 
     def __call__(self, twitter_objs):
         return twitter_objs
+
+    def __str__(self):
+        return self.__class__.__name__

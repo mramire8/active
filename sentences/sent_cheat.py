@@ -357,7 +357,7 @@ def main():
     args.fixk = None
 
     data, vct = load_from_file(args.train, [categories[3]], args.fixk, min_size, vct, raw=True)
-
+    print "Vectorizer:", vct
     print("Data %s" % args.train)
     print("Data size %s" % len(data.train.data))
 

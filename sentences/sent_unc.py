@@ -32,7 +32,7 @@ ap = argparse.ArgumentParser(description=__doc__,
                              formatter_class=argparse.RawTextHelpFormatter)
 ap.add_argument('--train',
                 metavar='TRAIN',
-                default="20news",
+                default="aviation",
                 help='training data (libSVM format)')
 
 ap.add_argument('--expert-penalty',
@@ -50,13 +50,13 @@ ap.add_argument('--expert',
 ap.add_argument('--student',
                 metavar='STUDENT_TYPE',
                 type=str,
-                default='unc_sr',
+                default='unc_first1',
                 help='Type of 7 [sr|rnd|fixkSR|sr_seq|firsk_seq|rnd_max | rnd_firstk| firstkmax_tfe | firstkmax_seq_tfe]')
 
 ap.add_argument('--classifier',
                 metavar='STUDENT_MODEL',
                 type=str,
-                default='lradapt',
+                default='lrl2',
                 help='[lr|mnb]')
 
 ap.add_argument('--trials',
@@ -74,7 +74,7 @@ ap.add_argument('--folds',
 ap.add_argument('--budget',
                 metavar='BUDGET',
                 type=int,
-                default=200,
+                default=300,
                 help='budget')
 
 ap.add_argument('--step-size',
@@ -321,7 +321,7 @@ def main():
                   ['comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware'],
                   ['rec.sport.baseball', 'sci.crypt']]
 
-    min_size = None
+    min_size = 10
 
     args.fixk = None
 
@@ -382,8 +382,10 @@ def main():
 
         exp_clf.fit(expert_data.oracle.train.bow, expert_data.oracle.train.target)
     else:
-        expert_data.data = np.concatenate((data.train.data, data.test.data))
-        expert_data.target = np.concatenate((data.train.target, data.test.target))
+        # expert_data.data = np.concatenate((data.train.data, data.test.data))
+        # expert_data.target = np.concatenate((data.train.target, data.test.target))
+        expert_data.data =data.train.data
+        expert_data.target = data.train.target
         expert_data.target_names = data.train.target_names
         labels, sent_train = experiment_utils.split_data_sentences(expert_data, sent_detector, vct, limit=args.limit)
         expert_data.bow = vct.transform(sent_train)
@@ -486,10 +488,8 @@ def main():
                 print "Bootstrap: %s " % bt.__class__.__name__
                 print
             else:
-                if not calibrated:
-                    chosen = student.pick_next(pool=pool, step_size=step_size)
-                else:
-                    chosen = student.pick_next_cal(pool=pool, step_size=step_size)
+
+                chosen = student.pick_next(pool=pool, step_size=step_size)
 
                 query_index = [x for x, y in chosen]  # document id of chosen instances
                 query = [y[0] for x, y in chosen]  # sentence of the document
